@@ -4,7 +4,7 @@ import 'package:paper_trading_app/app.dart';
 import 'package:paper_trading_app/data/app_database.dart';
 
 void main() {
-  testWidgets('renders the engine status and derives cash from a deposit',
+  testWidgets('renders the account panel and deposits paper cash',
       (tester) async {
     final db = AppDatabase.inMemory();
     addTearDown(db.close);
@@ -14,10 +14,10 @@ void main() {
     );
 
     expect(find.text('TUREIS'), findsOneWidget);
-    expect(find.text('LOCAL ENGINE'), findsOneWidget);
-    expect(find.text(r'$0.00'), findsOneWidget);
+    expect(find.text('ACCOUNT'), findsOneWidget);
+    expect(find.text('NO OPEN POSITIONS'), findsOneWidget);
 
-    await tester.tap(find.text('RUN SMOKE TEST'));
+    await tester.tap(find.text('DEPOSIT CASH'));
     await tester.pump();
 
     expect(find.text(r'$100,000.00'), findsOneWidget);

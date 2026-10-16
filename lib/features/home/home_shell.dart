@@ -12,6 +12,13 @@ import '../../market/models/instrument.dart';
 import '../../market/models/quote.dart';
 import '../../market/providers/market_data_provider.dart';
 import '../../market/quote_repository.dart';
+import '../../trading/portfolio.dart';
+import '../../trading/position_repository.dart';
+import '../../trading/trading_engine.dart';
+import '../trade/order_ticket.dart';
+
+/// Virtual cash added by the "DEPOSIT CASH" action / opening balance.
+const double kDepositAmount = 100000.0;
 
 /// The application frame: a dense top bar, a two-tab body, and a bottom
 /// segmented control (thumb-first on Android, `Ctrl+1`/`Ctrl+2` on Windows).
@@ -24,6 +31,9 @@ class HomeShell extends StatefulWidget {
     required this.instruments,
     required this.quotes,
     required this.marketData,
+    required this.engine,
+    required this.positions,
+    required this.accountId,
   });
 
   final AppDatabase database;
@@ -32,6 +42,9 @@ class HomeShell extends StatefulWidget {
   final InstrumentRepository instruments;
   final QuoteRepository quotes;
   final MarketDataService marketData;
+  final TradingEngine engine;
+  final PositionRepository positions;
+  final String accountId;
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -43,22 +56,9 @@ class _HomeShellState extends State<HomeShell> {
   final GlobalKey<_DiscoveryTabState> _discoveryKey =
       GlobalKey<_DiscoveryTabState>();
 
-  int _ledgerCount = 0;
-  int _pending = 0;
-  double _cash = 0;
-
   @override
   void initState() {
     super.initState();
-    _refresh();
-  }
-
-  void _refresh() {
-    setState(() {
-      _ledgerCount = widget.database.ledgerEventCount();
-      _pending = widget.ledger.pendingCount();
-      _cash = widget.ledger.cashBalance();
-    });
   }
 
   void _selectTab(int index) {
@@ -66,10 +66,13 @@ class _HomeShellState extends State<HomeShell> {
     setState(() => _tab = index);
   }
 
-  void _runSmokeTest() {
-    widget.ledger.append(widget.ledger.deposit(amount: 100000));
-    _refresh();
+  void _deposit() {
+    widget.ledger.append(widget.ledger.deposit(amount: kDepositAmount));
+    setState(() {});
   }
+
+  /// Called after an order fills so derived views re-read the ledger.
+  void _afterTrade() => setState(() {});
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
@@ -92,6 +95,11 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
+    final cash = widget.ledger.cashBalance();
+    final openPositions = widget.positions.all(widget.accountId);
+    final realisedPnl =
+        openPositions.fold<double>(0.0, (sum, p) => sum + p.realisedPnl);
+
     return Scaffold(
       body: Focus(
         autofocus: true,
@@ -101,7 +109,7 @@ class _HomeShellState extends State<HomeShell> {
             _TopBar(
               journalMode: widget.database.journalMode,
               schemaVersion: widget.database.schemaVersion,
-              pending: _pending,
+              pending: widget.engine.workingOrders().length,
             ),
             Expanded(
               child: IndexedStack(
@@ -111,17 +119,20 @@ class _HomeShellState extends State<HomeShell> {
                     databasePath: widget.databasePath,
                     journalMode: widget.database.journalMode,
                     schemaVersion: widget.database.schemaVersion,
-                    ledgerCount: _ledgerCount,
-                    pending: _pending,
-                    cash: _cash,
+                    ledgerCount: widget.database.ledgerEventCount(),
+                    cash: cash,
+                    realisedPnl: realisedPnl,
+                    positions: openPositions,
                     instrumentCount: widget.database.instrumentCount(),
-                    onRunSmokeTest: _runSmokeTest,
+                    onDeposit: _deposit,
                   ),
                   _DiscoveryTab(
                     key: _discoveryKey,
                     instruments: widget.instruments,
                     quotes: widget.quotes,
                     marketData: widget.marketData,
+                    engine: widget.engine,
+                    onTraded: _afterTrade,
                   ),
                 ],
               ),
@@ -261,7 +272,7 @@ class _StatusPill extends StatelessWidget {
             width: 6,
             height: 6,
             decoration: const BoxDecoration(
-              color: AppColors.warning,
+              color: AppColors.warning, // swatch: local-only until Phase 4.
               shape: BoxShape.circle,
             ),
           ),
@@ -282,7 +293,7 @@ class _StatusPill extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Tab 1 — Portfolio (placeholder + live engine read)
+// Tab 1 — Portfolio: engine read, account summary, positions
 // ---------------------------------------------------------------------------
 
 class _PortfolioTab extends StatelessWidget {
@@ -291,20 +302,22 @@ class _PortfolioTab extends StatelessWidget {
     required this.journalMode,
     required this.schemaVersion,
     required this.ledgerCount,
-    required this.pending,
     required this.cash,
+    required this.realisedPnl,
+    required this.positions,
     required this.instrumentCount,
-    required this.onRunSmokeTest,
+    required this.onDeposit,
   });
 
   final String databasePath;
   final String journalMode;
   final int schemaVersion;
   final int ledgerCount;
-  final int pending;
   final double cash;
+  final double realisedPnl;
+  final List<Position> positions;
   final int instrumentCount;
-  final VoidCallback onRunSmokeTest;
+  final VoidCallback onDeposit;
 
   @override
   Widget build(BuildContext context) {
@@ -314,25 +327,8 @@ class _PortfolioTab extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _Panel(
-            title: 'LOCAL ENGINE',
-            trailing: _GhostButton(
-              label: 'RUN SMOKE TEST',
-              onPressed: onRunSmokeTest,
-            ),
-            child: Column(
-              children: [
-                _KeyValueRow(label: 'DATABASE', value: databasePath, mono: true),
-                _KeyValueRow(label: 'JOURNAL', value: journalMode.toUpperCase(), mono: true),
-                _KeyValueRow(label: 'SCHEMA', value: 'v$schemaVersion', mono: true),
-                _KeyValueRow(label: 'LEDGER EVENTS', value: '$ledgerCount', mono: true),
-                _KeyValueRow(label: 'QUEUED FOR SYNC', value: '$pending', mono: true),
-                _KeyValueRow(label: 'INSTRUMENTS (FTS5)', value: '$instrumentCount', mono: true),
-              ],
-            ),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          _Panel(
-            title: 'DERIVED STATE',
+            title: 'ACCOUNT',
+            trailing: _GhostButton(label: 'DEPOSIT CASH', onPressed: onDeposit),
             child: Column(
               children: [
                 _KeyValueRow(
@@ -340,7 +336,21 @@ class _PortfolioTab extends StatelessWidget {
                   value: formatMoney(cash),
                   mono: true,
                   emphasis: true,
-                  valueColor: cash > 0 ? AppColors.positive : null,
+                ),
+                _KeyValueRow(
+                  label: 'REALISED P&L',
+                  value: formatMoney(realisedPnl),
+                  mono: true,
+                  valueColor: realisedPnl > 0
+                      ? AppColors.positive
+                      : realisedPnl < 0
+                          ? AppColors.negative
+                          : AppColors.textPrimaryDark,
+                ),
+                _KeyValueRow(
+                  label: 'OPEN POSITIONS',
+                  value: '${positions.length}',
+                  mono: true,
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 Align(
@@ -359,10 +369,38 @@ class _PortfolioTab extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.lg),
-          _Placeholder(
-            title: 'HOLDINGS & P&L',
-            body: 'High-density holdings table, equity curve and risk metrics '
-                'arrive in Phase 5.',
+          _Panel(
+            title: 'POSITIONS (CACHE)',
+            trailing: Text(
+              'MARK-TO-MARKET IN PHASE 5',
+              style: AppTypography.mono(
+                size: 9,
+                color: AppColors.textMutedDark,
+                letterSpacing: 0.4,
+              ),
+            ),
+            child: positions.isEmpty
+                ? _EmptyLine(text: 'NO OPEN POSITIONS')
+                : Column(
+                    children: [
+                      const _PositionHeader(),
+                      for (final position in positions)
+                        _PositionRow(position: position),
+                    ],
+                  ),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          _Panel(
+            title: 'LOCAL ENGINE',
+            child: Column(
+              children: [
+                _KeyValueRow(label: 'DATABASE', value: databasePath, mono: true),
+                _KeyValueRow(label: 'JOURNAL', value: journalMode.toUpperCase(), mono: true),
+                _KeyValueRow(label: 'SCHEMA', value: 'v$schemaVersion', mono: true),
+                _KeyValueRow(label: 'LEDGER EVENTS', value: '$ledgerCount', mono: true),
+                _KeyValueRow(label: 'INSTRUMENTS (FTS5)', value: '$instrumentCount', mono: true),
+              ],
+            ),
           ),
         ],
       ),
@@ -370,8 +408,105 @@ class _PortfolioTab extends StatelessWidget {
   }
 }
 
+class _PositionHeader extends StatelessWidget {
+  const _PositionHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Row(
+        children: [
+          _col('SYMBOL', 110, alignRight: false),
+          _col('CLASS', 70, alignRight: false),
+          _col('QTY', 110),
+          _col('AVG COST', 110),
+          _col('COST BASIS', 110),
+          _col('REALISED P&L', 120),
+        ],
+      ),
+    );
+  }
+
+  Widget _col(String label, double width, {bool alignRight = true}) {
+    return SizedBox(
+      width: width,
+      child: Text(
+        label,
+        textAlign: alignRight ? TextAlign.right : TextAlign.left,
+        style: AppTypography.label(AppColors.textMutedDark),
+      ),
+    );
+  }
+}
+
+class _PositionRow extends StatelessWidget {
+  const _PositionRow({required this.position});
+
+  final Position position;
+
+  @override
+  Widget build(BuildContext context) {
+    final realised = position.realisedPnl;
+    final realisedColor = realised > 0
+        ? AppColors.positive
+        : realised < 0
+            ? AppColors.negative
+            : AppColors.textSecondaryDark;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 110,
+            child: Text(
+              position.symbol,
+              style: AppTypography.mono(
+                size: 12,
+                weight: FontWeight.w600,
+                color: AppColors.textPrimaryDark,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 70,
+            child: Text(
+              position.assetClass.wire,
+              style: AppTypography.mono(
+                size: 9,
+                color: AppColors.textMutedDark,
+              ),
+            ),
+          ),
+          _num(position.quantity.toStringAsFixed(
+            position.assetClass == AssetClass.crypto ? 8 : 4,
+          ), 110),
+          _num(formatMoney(position.averageCost), 110),
+          _num(formatMoney(position.costBasis), 110),
+          _num(formatMoney(realised), 120, color: realisedColor),
+        ],
+      ),
+    );
+  }
+
+  Widget _num(String value, double width, {Color? color}) {
+    return SizedBox(
+      width: width,
+      child: Text(
+        value,
+        textAlign: TextAlign.right,
+        style: AppTypography.mono(
+          size: 12,
+          color: color ?? AppColors.textPrimaryDark,
+        ),
+      ),
+    );
+  }
+}
+
 // ---------------------------------------------------------------------------
-// Tab 2 — Multi-asset discovery (local FTS5 search + live quotes)
+// Tab 2 — Multi-asset discovery (FTS5 search + live quotes + trading)
 // ---------------------------------------------------------------------------
 
 class _DiscoveryTab extends StatefulWidget {
@@ -380,11 +515,15 @@ class _DiscoveryTab extends StatefulWidget {
     required this.instruments,
     required this.quotes,
     required this.marketData,
+    required this.engine,
+    required this.onTraded,
   });
 
   final InstrumentRepository instruments;
   final QuoteRepository quotes;
   final MarketDataService marketData;
+  final TradingEngine engine;
+  final VoidCallback onTraded;
 
   @override
   State<_DiscoveryTab> createState() => _DiscoveryTabState();
@@ -417,9 +556,14 @@ class _DiscoveryTabState extends State<_DiscoveryTab> {
       assetClass: _filter,
       limit: 60,
     );
+    final quotes = widget.quotes.getMany(results.map((e) => e.symbol));
     setState(() {
       _results = results;
-      _quotes = widget.quotes.getMany(results.map((e) => e.symbol));
+      _quotes = quotes;
+      // Let resting orders react to the freshest known prices.
+      for (final quote in quotes.values) {
+        widget.engine.onQuote(quote);
+      }
     });
   }
 
@@ -437,6 +581,10 @@ class _DiscoveryTabState extends State<_DiscoveryTab> {
     });
     try {
       final fetched = await widget.marketData.refreshQuotes(_results);
+      for (final quote in fetched) {
+        widget.engine.onQuote(quote);
+      }
+      if (!mounted) return;
       setState(() {
         _quotes = <String, Quote>{
           ..._quotes,
@@ -444,12 +592,43 @@ class _DiscoveryTabState extends State<_DiscoveryTab> {
         };
       });
     } on MarketDataException catch (e) {
-      setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = e.toString());
     } catch (e) {
-      setState(() => _error = 'Market data unavailable: $e');
+      if (mounted) setState(() => _error = 'Market data unavailable: $e');
     } finally {
       if (mounted) setState(() => _refreshing = false);
     }
+  }
+
+  Future<void> _openTicket(Instrument instrument) async {
+    final result = await showOrderTicket(
+      context,
+      engine: widget.engine,
+      marketData: widget.marketData,
+      quotes: widget.quotes,
+      instrument: instrument,
+    );
+    if (!mounted) return;
+    if (result != null && result.isFilled) {
+      widget.onTraded();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.raisedDark,
+          content: Text(
+            '${result.order.side.wire} ${result.order.quantity} '
+            '${instrument.symbol} @ ${result.executionPrice?.toStringAsFixed(2)}',
+            style: AppTypography.mono(
+              size: 12,
+              color: AppColors.textPrimaryDark,
+            ),
+          ),
+        ),
+      );
+    }
+    setState(() {
+      _quotes = widget.quotes.getMany(_results.map((e) => e.symbol));
+    });
+    widget.onTraded();
   }
 
   @override
@@ -485,6 +664,15 @@ class _DiscoveryTabState extends State<_DiscoveryTab> {
               Text(
                 '${_results.length} RESULTS',
                 style: AppTypography.label(AppColors.textMutedDark),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Text(
+                'CLICK A ROW TO TRADE',
+                style: AppTypography.mono(
+                  size: 9,
+                  color: AppColors.textMutedDark,
+                  letterSpacing: 0.4,
+                ),
               ),
               const Spacer(),
               if (_refreshing)
@@ -532,7 +720,7 @@ class _DiscoveryTabState extends State<_DiscoveryTab> {
           ),
         Expanded(
           child: _results.isEmpty
-              ? const _EmptyResults()
+              ? const _EmptyLine(text: 'NO INSTRUMENTS MATCH')
               : ListView.builder(
                   itemCount: _results.length,
                   itemBuilder: (context, index) {
@@ -540,6 +728,7 @@ class _DiscoveryTabState extends State<_DiscoveryTab> {
                     return _InstrumentRow(
                       instrument: instrument,
                       quote: _quotes[instrument.symbol],
+                      onTap: () => _openTicket(instrument),
                     );
                   },
                 ),
@@ -668,105 +857,113 @@ class _Pill extends StatelessWidget {
 }
 
 class _InstrumentRow extends StatelessWidget {
-  const _InstrumentRow({required this.instrument, this.quote});
+  const _InstrumentRow({
+    required this.instrument,
+    this.quote,
+    required this.onTap,
+  });
 
   final Instrument instrument;
   final Quote? quote;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final hairline = Theme.of(context).dividerColor;
     final changeColor = _changeColor(quote?.changePercent);
 
-    return Container(
-      height: 44,
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: hairline, width: AppBorders.hairline),
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        height: 44,
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(color: hairline, width: AppBorders.hairline),
+          ),
         ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 46,
-            padding: const EdgeInsets.symmetric(vertical: 2),
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              border: Border.all(
-                color: AppColors.hairlineDark,
-                width: AppBorders.hairline,
+        child: Row(
+          children: [
+            Container(
+              width: 46,
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: AppColors.hairlineDark,
+                  width: AppBorders.hairline,
+                ),
+                borderRadius: AppRadii.smAll,
               ),
-              borderRadius: AppRadii.smAll,
-            ),
-            child: Text(
-              instrument.assetClass.wire,
-              style: AppTypography.mono(
-                size: 9,
-                weight: FontWeight.w600,
-                color: AppColors.textMutedDark,
-                letterSpacing: 0.4,
-              ),
-            ),
-          ),
-          const SizedBox(width: AppSpacing.md),
-          SizedBox(
-            width: 110,
-            child: Text(
-              instrument.symbol,
-              style: AppTypography.mono(
-                size: 13,
-                weight: FontWeight.w600,
-                color: AppColors.textPrimaryDark,
+              child: Text(
+                instrument.assetClass.wire,
+                style: AppTypography.mono(
+                  size: 9,
+                  weight: FontWeight.w600,
+                  color: AppColors.textMutedDark,
+                  letterSpacing: 0.4,
+                ),
               ),
             ),
-          ),
-          Expanded(
-            child: Text(
-              instrument.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.ui(
-                size: 12,
-                color: AppColors.textSecondaryDark,
-              ),
-            ),
-          ),
-          if (instrument.isin != null) ...[
             const SizedBox(width: AppSpacing.md),
-            Text(
-              instrument.isin!,
-              style: AppTypography.mono(
-                size: 10,
-                color: AppColors.textMutedDark,
+            SizedBox(
+              width: 110,
+              child: Text(
+                instrument.symbol,
+                style: AppTypography.mono(
+                  size: 13,
+                  weight: FontWeight.w600,
+                  color: AppColors.textPrimaryDark,
+                ),
+              ),
+            ),
+            Expanded(
+              child: Text(
+                instrument.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.ui(
+                  size: 12,
+                  color: AppColors.textSecondaryDark,
+                ),
+              ),
+            ),
+            if (instrument.isin != null) ...[
+              const SizedBox(width: AppSpacing.md),
+              Text(
+                instrument.isin!,
+                style: AppTypography.mono(
+                  size: 10,
+                  color: AppColors.textMutedDark,
+                ),
+              ),
+            ],
+            const SizedBox(width: AppSpacing.lg),
+            SizedBox(
+              width: 96,
+              child: Text(
+                quote == null ? '—' : _formatPrice(instrument, quote!),
+                textAlign: TextAlign.right,
+                style: AppTypography.mono(
+                  size: 13,
+                  weight: FontWeight.w600,
+                  color: AppColors.textPrimaryDark,
+                ),
+              ),
+            ),
+            SizedBox(
+              width: 72,
+              child: Text(
+                quote == null ? '' : _formatChange(quote!),
+                textAlign: TextAlign.right,
+                style: AppTypography.mono(
+                  size: 12,
+                  color: changeColor,
+                ),
               ),
             ),
           ],
-          const SizedBox(width: AppSpacing.lg),
-          SizedBox(
-            width: 96,
-            child: Text(
-              quote == null ? '—' : _formatPrice(instrument, quote!),
-              textAlign: TextAlign.right,
-              style: AppTypography.mono(
-                size: 13,
-                weight: FontWeight.w600,
-                color: AppColors.textPrimaryDark,
-              ),
-            ),
-          ),
-          SizedBox(
-            width: 72,
-            child: Text(
-              quote == null ? '' : _formatChange(quote!),
-              textAlign: TextAlign.right,
-              style: AppTypography.mono(
-                size: 12,
-                color: changeColor,
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -790,24 +987,6 @@ class _InstrumentRow extends StatelessWidget {
     if (percent > 0) return AppColors.positive;
     if (percent < 0) return AppColors.negative;
     return AppColors.neutral;
-  }
-}
-
-class _EmptyResults extends StatelessWidget {
-  const _EmptyResults();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Text(
-        'NO INSTRUMENTS MATCH',
-        style: AppTypography.mono(
-          size: 11,
-          color: AppColors.textMutedDark,
-          letterSpacing: 1.0,
-        ),
-      ),
-    );
   }
 }
 
@@ -913,6 +1092,29 @@ class _KeyValueRow extends StatelessWidget {
   }
 }
 
+class _EmptyLine extends StatelessWidget {
+  const _EmptyLine({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
+      child: Center(
+        child: Text(
+          text,
+          style: AppTypography.mono(
+            size: 11,
+            color: AppColors.textMutedDark,
+            letterSpacing: 1.0,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _GhostButton extends StatelessWidget {
   const _GhostButton({required this.label, required this.onPressed});
 
@@ -942,42 +1144,6 @@ class _GhostButton extends StatelessWidget {
         ),
       ),
       child: Text(label),
-    );
-  }
-}
-
-class _Placeholder extends StatelessWidget {
-  const _Placeholder({required this.title, required this.body});
-
-  final String title;
-  final String body;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      decoration: BoxDecoration(
-        border: Border.all(
-          color: AppColors.hairlineDark,
-          width: AppBorders.hairline,
-        ),
-        borderRadius: AppRadii.mdAll,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: AppTypography.label(AppColors.textMutedDark)),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            body,
-            style: AppTypography.ui(
-              size: 12,
-              color: AppColors.textMutedDark,
-              height: 1.4,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

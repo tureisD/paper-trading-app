@@ -16,7 +16,7 @@ for the full roadmap and architecture.
 | :--- | :--- | :--- |
 | **1** | Core engine, local SQLite, design tokens | ✅ Done |
 | **2** | Multi-asset market data (search + quotes) | ✅ Done |
-| 3 | Double-entry trading engine | ⬜ Not started |
+| **3** | Double-entry trading engine | ✅ Done |
 | 4 | GitHub Gist cross-device sync | ⬜ Not started |
 | 5 | Tab 1 — Holdings & P&L | ⬜ Not started |
 | 6 | Tab 2 — Search & order ticket | ⬜ Not started |
@@ -52,7 +52,9 @@ lib/
   data/            SQLite database, versioned schema, ledger repository
   design/          design tokens + Material theme
   features/home/   application shell (two-tab frame)
+  features/trade/   order ticket
   market/          asset classes, providers, catalog search, quote cache
+  trading/         ledger replay, WAC accounting, matching engine
 ```
 
 ## Market data (Phase 2)
@@ -74,6 +76,40 @@ Keyless-first: no API keys are required for any provider shipped today.
 - **Seeds:** `assets/data/instruments.json` (~76 instruments covering every
   asset class). The schema/FTS index are sized for 50k+; expand by appending.
 - **Not yet implemented:** ECB Data Portal provider, streaming WebSockets.
+
+## Trading engine (Phase 3)
+
+Fills are appended to the immutable `ledger_events` log; portfolio state (cash,
+Weighted Average Cost, realised P&L) is always **re-derived by replay**, never
+mutated in place (roadmap §4.1, §5.2).
+
+| Asset class | Execution rules |
+| :--- | :--- |
+| Stocks / ETFs | Market, limit, stop; fractional quantities; ±0.02% simulated slippage |
+| Crypto | 24/7; quantities down to 1e-8; 0.10% maker/taker fee |
+| Funds | Intraday orders rest as `QUEUED_NAV` and settle at the next EOD NAV |
+| Bonds | Quoted clean, settled dirty (clean + accrued interest); coupons credited once per coupon date |
+
+- **Schema v3**: `accounts`, `pending_orders`, `positions_cache`,
+  `bond_coupon_credits`.
+- **Order book**: non-marketable orders rest locally and are re-evaluated on
+  every quote update.
+- **Risk checks**: buying power for buys, held quantity for sells. Rejections
+  are recorded as rejected orders, not thrown.
+- **Bond maths**: coupon dates and accrued interest are UTC-stable (a date parsed
+  as local time shifts the schedule by a day — see `BondMath.parseDateUtc`).
+- **Note**: pending orders are device-local working state; only fills enter the
+  synced ledger.
+
+## Design review screenshots
+
+Renders the Portfolio tab offscreen (no window, no network) to a PNG:
+
+```bash
+RENDER_SCREENSHOTS=1 RENDER_OUT=shot.png flutter test test/render_screenshots.dart
+```
+
+Not part of the normal `flutter test` run.
 
 ## Notes & caveats
 

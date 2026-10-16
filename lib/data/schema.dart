@@ -6,12 +6,13 @@ class Schema {
   const Schema._();
 
   /// Current schema version (== index of the last applied migration).
-  static const int version = 2;
+  static const int version = 3;
 
   /// Ordered migrations. `migrations[0]` takes the DB from v0 -> v1, etc.
   static const List<List<String>> migrations = <List<String>>[
     _v1,
     _v2,
+    _v3,
   ];
 
   /// v1 — append-only event ledger + FTS5 instrument index + sync bookkeeping.
@@ -92,6 +93,59 @@ class Schema {
         currency       TEXT NOT NULL DEFAULT 'USD',
         as_of          TEXT NOT NULL,
         source         TEXT NOT NULL
+    );
+    ''',
+  ];
+
+  /// v3 — trading engine: accounts, working order book, position cache and
+  /// idempotent bond coupon crediting.
+  static const List<String> _v3 = <String>[
+    '''
+    CREATE TABLE IF NOT EXISTS accounts (
+        account_id    TEXT PRIMARY KEY,
+        name          TEXT NOT NULL,
+        base_currency TEXT NOT NULL DEFAULT 'USD',
+        created_at    TEXT NOT NULL
+    );
+    ''',
+    '''
+    CREATE TABLE IF NOT EXISTS pending_orders (
+        order_id       TEXT PRIMARY KEY,
+        account_id     TEXT NOT NULL,
+        symbol         TEXT NOT NULL,
+        asset_class    TEXT NOT NULL,
+        side           TEXT NOT NULL,
+        order_type     TEXT NOT NULL,
+        quantity       REAL NOT NULL,
+        limit_price    REAL,
+        stop_price     REAL,
+        status         TEXT NOT NULL,
+        created_at     TEXT NOT NULL,
+        updated_at     TEXT NOT NULL,
+        filled_event_id TEXT,
+        note           TEXT
+    );
+    ''',
+    'CREATE INDEX IF NOT EXISTS idx_pending_status ON pending_orders(status, symbol);',
+    '''
+    CREATE TABLE IF NOT EXISTS positions_cache (
+        account_id   TEXT NOT NULL,
+        symbol       TEXT NOT NULL,
+        asset_class  TEXT NOT NULL,
+        quantity     REAL NOT NULL,
+        average_cost REAL NOT NULL,
+        realised_pnl REAL NOT NULL,
+        updated_at   TEXT NOT NULL,
+        PRIMARY KEY (account_id, symbol)
+    );
+    ''',
+    '''
+    CREATE TABLE IF NOT EXISTS bond_coupon_credits (
+        symbol      TEXT NOT NULL,
+        coupon_date TEXT NOT NULL,
+        event_id    TEXT NOT NULL,
+        credited_at TEXT NOT NULL,
+        PRIMARY KEY (symbol, coupon_date)
     );
     ''',
   ];
