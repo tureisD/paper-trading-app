@@ -15,7 +15,7 @@ for the full roadmap and architecture.
 | Phase | Scope | State |
 | :--- | :--- | :--- |
 | **1** | Core engine, local SQLite, design tokens | ✅ Done |
-| 2 | Multi-asset market data | ⬜ Not started |
+| **2** | Multi-asset market data (search + quotes) | ✅ Done |
 | 3 | Double-entry trading engine | ⬜ Not started |
 | 4 | GitHub Gist cross-device sync | ⬜ Not started |
 | 5 | Tab 1 — Holdings & P&L | ⬜ Not started |
@@ -52,7 +52,28 @@ lib/
   data/            SQLite database, versioned schema, ledger repository
   design/          design tokens + Material theme
   features/home/   application shell (two-tab frame)
+  market/          asset classes, providers, catalog search, quote cache
 ```
+
+## Market data (Phase 2)
+
+Keyless-first: no API keys are required for any provider shipped today.
+
+| Asset class | Provider | Endpoint |
+| :--- | :--- | :--- |
+| Stocks, ETFs, Funds | `yahoo` | `query1.finance.yahoo.com/v8/finance/chart` |
+| Crypto | `binance` | `api.binance.com/api/v3` (+ `data-api.binance.vision` mirror) |
+| Bonds / yields | `fred` | `fred.stlouisfed.org/graph/fredgraph.csv` |
+
+- **Local search:** the instrument catalog lives in SQLite and is queried through
+  the FTS5 index (sub-millisecond, fully offline).
+- **Routing:** each instrument stores `provider` + `provider_symbol`, so
+  keyed providers (Finnhub, Alpaca, Polygon, Twelve Data) can be added as
+  drop-in `MarketDataProvider` implementations without touching the UI.
+- **Bulk refresh:** bounded concurrency (6 at a time), best-effort per symbol.
+- **Seeds:** `assets/data/instruments.json` (~76 instruments covering every
+  asset class). The schema/FTS index are sized for 50k+; expand by appending.
+- **Not yet implemented:** ECB Data Portal provider, streaming WebSockets.
 
 ## Notes & caveats
 

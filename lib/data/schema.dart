@@ -6,11 +6,12 @@ class Schema {
   const Schema._();
 
   /// Current schema version (== index of the last applied migration).
-  static const int version = 1;
+  static const int version = 2;
 
   /// Ordered migrations. `migrations[0]` takes the DB from v0 -> v1, etc.
   static const List<List<String>> migrations = <List<String>>[
     _v1,
+    _v2,
   ];
 
   /// v1 — append-only event ledger + FTS5 instrument index + sync bookkeeping.
@@ -48,6 +49,49 @@ class Schema {
     CREATE TABLE IF NOT EXISTS sync_state (
         key   TEXT PRIMARY KEY,
         value TEXT
+    );
+    ''',
+  ];
+
+  /// v2 — multi-asset instrument catalog, bond reference data and quote cache.
+  static const List<String> _v2 = <String>[
+    '''
+    CREATE TABLE IF NOT EXISTS instruments (
+        symbol          TEXT PRIMARY KEY,
+        name            TEXT NOT NULL,
+        asset_class     TEXT NOT NULL,
+        exchange        TEXT,
+        currency        TEXT NOT NULL DEFAULT 'USD',
+        isin            TEXT,
+        cusip           TEXT,
+        provider        TEXT,
+        provider_symbol TEXT,
+        updated_at      TEXT
+    );
+    ''',
+    'CREATE INDEX IF NOT EXISTS idx_instruments_class ON instruments(asset_class);',
+    'CREATE INDEX IF NOT EXISTS idx_instruments_isin ON instruments(isin);',
+    '''
+    CREATE TABLE IF NOT EXISTS bond_details (
+        symbol           TEXT PRIMARY KEY,
+        coupon_rate      REAL,
+        maturity_date    TEXT,
+        par_value        REAL,
+        coupon_frequency INTEGER,
+        day_count        TEXT,
+        FOREIGN KEY (symbol) REFERENCES instruments(symbol) ON DELETE CASCADE
+    );
+    ''',
+    '''
+    CREATE TABLE IF NOT EXISTS quotes (
+        symbol         TEXT PRIMARY KEY,
+        price          REAL NOT NULL,
+        previous_close REAL,
+        change         REAL,
+        change_percent REAL,
+        currency       TEXT NOT NULL DEFAULT 'USD',
+        as_of          TEXT NOT NULL,
+        source         TEXT NOT NULL
     );
     ''',
   ];

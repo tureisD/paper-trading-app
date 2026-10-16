@@ -5,24 +5,33 @@ import '../../core/format.dart';
 import '../../data/app_database.dart';
 import '../../data/ledger_repository.dart';
 import '../../design/tokens.dart';
+import '../../market/asset_class.dart';
+import '../../market/instrument_repository.dart';
+import '../../market/market_data_service.dart';
+import '../../market/models/instrument.dart';
+import '../../market/models/quote.dart';
+import '../../market/providers/market_data_provider.dart';
+import '../../market/quote_repository.dart';
 
 /// The application frame: a dense top bar, a two-tab body, and a bottom
 /// segmented control (thumb-first on Android, `Ctrl+1`/`Ctrl+2` on Windows).
-///
-/// The tab bodies are intentionally placeholders in Phase 1 — Phases 5 and 6
-/// fill them in. What is real here is the theme, the geometry, and a live read
-/// of the local SQLite engine.
 class HomeShell extends StatefulWidget {
   const HomeShell({
     super.key,
     required this.database,
-    required this.ledger,
     required this.databasePath,
+    required this.ledger,
+    required this.instruments,
+    required this.quotes,
+    required this.marketData,
   });
 
   final AppDatabase database;
-  final LedgerRepository ledger;
   final String databasePath;
+  final LedgerRepository ledger;
+  final InstrumentRepository instruments;
+  final QuoteRepository quotes;
+  final MarketDataService marketData;
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -30,6 +39,9 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   int _tab = 0;
+
+  final GlobalKey<_DiscoveryTabState> _discoveryKey =
+      GlobalKey<_DiscoveryTabState>();
 
   int _ledgerCount = 0;
   int _pending = 0;
@@ -71,6 +83,10 @@ class _HomeShellState extends State<HomeShell> {
       _selectTab(1);
       return KeyEventResult.handled;
     }
+    if (ctrl && key == LogicalKeyboardKey.keyR && _tab == 1) {
+      _discoveryKey.currentState?.refreshQuotes();
+      return KeyEventResult.handled;
+    }
     return KeyEventResult.ignored;
   }
 
@@ -101,7 +117,12 @@ class _HomeShellState extends State<HomeShell> {
                     instrumentCount: widget.database.instrumentCount(),
                     onRunSmokeTest: _runSmokeTest,
                   ),
-                  const _DiscoveryTab(),
+                  _DiscoveryTab(
+                    key: _discoveryKey,
+                    instruments: widget.instruments,
+                    quotes: widget.quotes,
+                    marketData: widget.marketData,
+                  ),
                 ],
               ),
             ),
@@ -350,52 +371,441 @@ class _PortfolioTab extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Tab 2 — Discovery (placeholder)
+// Tab 2 — Multi-asset discovery (local FTS5 search + live quotes)
 // ---------------------------------------------------------------------------
 
-class _DiscoveryTab extends StatelessWidget {
-  const _DiscoveryTab();
+class _DiscoveryTab extends StatefulWidget {
+  const _DiscoveryTab({
+    super.key,
+    required this.instruments,
+    required this.quotes,
+    required this.marketData,
+  });
+
+  final InstrumentRepository instruments;
+  final QuoteRepository quotes;
+  final MarketDataService marketData;
+
+  @override
+  State<_DiscoveryTab> createState() => _DiscoveryTabState();
+}
+
+class _DiscoveryTabState extends State<_DiscoveryTab> {
+  final TextEditingController _controller = TextEditingController();
+
+  AssetClass? _filter;
+  List<Instrument> _results = const [];
+  Map<String, Quote> _quotes = const {};
+  bool _refreshing = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _runSearch();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _runSearch() {
+    final results = widget.instruments.search(
+      _controller.text,
+      assetClass: _filter,
+      limit: 60,
+    );
+    setState(() {
+      _results = results;
+      _quotes = widget.quotes.getMany(results.map((e) => e.symbol));
+    });
+  }
+
+  void _setFilter(AssetClass? filter) {
+    _filter = filter;
+    _runSearch();
+  }
+
+  /// Fetches live quotes for the visible results (also bound to Ctrl+R).
+  Future<void> refreshQuotes() async {
+    if (_results.isEmpty || _refreshing) return;
+    setState(() {
+      _refreshing = true;
+      _error = null;
+    });
+    try {
+      final fetched = await widget.marketData.refreshQuotes(_results);
+      setState(() {
+        _quotes = <String, Quote>{
+          ..._quotes,
+          for (final q in fetched) q.symbol: q,
+        };
+      });
+    } on MarketDataException catch (e) {
+      setState(() => _error = e.toString());
+    } catch (e) {
+      setState(() => _error = 'Market data unavailable: $e');
+    } finally {
+      if (mounted) setState(() => _refreshing = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.lg,
+            AppSpacing.lg,
+            AppSpacing.lg,
+            AppSpacing.sm,
+          ),
+          child: _SearchField(
+            controller: _controller,
+            onChanged: (_) => _runSearch(),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+          child: _FilterPills(selected: _filter, onChanged: _setFilter),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.lg,
+            AppSpacing.md,
+            AppSpacing.lg,
+            AppSpacing.sm,
+          ),
+          child: Row(
+            children: [
+              Text(
+                '${_results.length} RESULTS',
+                style: AppTypography.label(AppColors.textMutedDark),
+              ),
+              const Spacer(),
+              if (_refreshing)
+                Text(
+                  'FETCHING…',
+                  style: AppTypography.mono(
+                    size: 10,
+                    color: AppColors.textMutedDark,
+                    letterSpacing: 0.6,
+                  ),
+                ),
+              const SizedBox(width: AppSpacing.sm),
+              _GhostButton(
+                label: 'REFRESH QUOTES',
+                onPressed: _refreshing ? () {} : refreshQuotes,
+              ),
+            ],
+          ),
+        ),
+        if (_error != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              0,
+              AppSpacing.lg,
+              AppSpacing.sm,
+            ),
+            child: Container(
+              padding: const EdgeInsets.all(AppSpacing.sm),
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: AppColors.negative,
+                  width: AppBorders.hairline,
+                ),
+                borderRadius: AppRadii.smAll,
+              ),
+              child: Text(
+                _error!,
+                style: AppTypography.mono(
+                  size: 11,
+                  color: AppColors.negative,
+                ),
+              ),
+            ),
+          ),
+        Expanded(
+          child: _results.isEmpty
+              ? const _EmptyResults()
+              : ListView.builder(
+                  itemCount: _results.length,
+                  itemBuilder: (context, index) {
+                    final instrument = _results[index];
+                    return _InstrumentRow(
+                      instrument: instrument,
+                      quote: _quotes[instrument.symbol],
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SearchField extends StatelessWidget {
+  const _SearchField({required this.controller, required this.onChanged});
+
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 34,
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.raisedDark,
+        border: Border.all(
+          color: AppColors.hairlineDark,
+          width: AppBorders.hairline,
+        ),
+        borderRadius: AppRadii.smAll,
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.search, size: 15, color: AppColors.textMutedDark),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              onChanged: onChanged,
+              autofocus: false,
+              style: AppTypography.mono(
+                size: 12,
+                color: AppColors.textPrimaryDark,
+              ),
+              cursorColor: AppColors.focus,
+              cursorWidth: 1.5,
+              decoration: InputDecoration(
+                isCollapsed: true,
+                border: InputBorder.none,
+                hintText: 'Search ticker, pair, issuer or ISIN  (/)',
+                hintStyle: AppTypography.ui(
+                  size: 12,
+                  color: AppColors.textMutedDark,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FilterPills extends StatelessWidget {
+  const _FilterPills({required this.selected, required this.onChanged});
+
+  final AssetClass? selected;
+  final ValueChanged<AssetClass?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: AppSpacing.sm,
+      runSpacing: AppSpacing.sm,
+      children: [
+        _Pill(
+          label: 'All',
+          active: selected == null,
+          onTap: () => onChanged(null),
+        ),
+        for (final assetClass in AssetClass.values)
+          _Pill(
+            label: assetClass.label,
+            active: selected == assetClass,
+            onTap: () => onChanged(assetClass),
+          ),
+      ],
+    );
+  }
+}
+
+class _Pill extends StatelessWidget {
+  const _Pill({required this.label, required this.active, required this.onTap});
+
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
+          vertical: AppSpacing.xs,
+        ),
+        decoration: BoxDecoration(
+          color: active ? AppColors.raisedDark : Colors.transparent,
+          border: Border.all(
+            color: active ? AppColors.focus : AppColors.hairlineDark,
+            width: AppBorders.hairline,
+          ),
+          borderRadius: AppRadii.smAll,
+        ),
+        child: Text(
+          label.toUpperCase(),
+          style: AppTypography.mono(
+            size: 10,
+            weight: FontWeight.w600,
+            letterSpacing: 0.6,
+            color: active ? AppColors.textPrimaryDark : AppColors.textMutedDark,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _InstrumentRow extends StatelessWidget {
+  const _InstrumentRow({required this.instrument, this.quote});
+
+  final Instrument instrument;
+  final Quote? quote;
+
+  @override
+  Widget build(BuildContext context) {
+    final hairline = Theme.of(context).dividerColor;
+    final changeColor = _changeColor(quote?.changePercent);
+
+    return Container(
+      height: 44,
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: hairline, width: AppBorders.hairline),
+        ),
+      ),
+      child: Row(
         children: [
           Container(
-            height: 34,
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+            width: 46,
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: AppColors.raisedDark,
               border: Border.all(
                 color: AppColors.hairlineDark,
                 width: AppBorders.hairline,
               ),
               borderRadius: AppRadii.smAll,
             ),
-            alignment: Alignment.centerLeft,
-            child: Row(
-              children: [
-                const Icon(Icons.search, size: 15, color: AppColors.textMutedDark),
-                const SizedBox(width: AppSpacing.sm),
-                Text(
-                  'Search ticker, pair, issuer or ISIN  (/)',
-                  style: AppTypography.ui(
-                    size: 12,
-                    color: AppColors.textMutedDark,
-                  ),
-                ),
-              ],
+            child: Text(
+              instrument.assetClass.wire,
+              style: AppTypography.mono(
+                size: 9,
+                weight: FontWeight.w600,
+                color: AppColors.textMutedDark,
+                letterSpacing: 0.4,
+              ),
             ),
           ),
-          const SizedBox(height: AppSpacing.lg),
-          _Placeholder(
-            title: 'MULTI-ASSET DISCOVERY',
-            body: 'Categorised instant search and the order ticket arrive in '
-                'Phase 6.',
+          const SizedBox(width: AppSpacing.md),
+          SizedBox(
+            width: 110,
+            child: Text(
+              instrument.symbol,
+              style: AppTypography.mono(
+                size: 13,
+                weight: FontWeight.w600,
+                color: AppColors.textPrimaryDark,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              instrument.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.ui(
+                size: 12,
+                color: AppColors.textSecondaryDark,
+              ),
+            ),
+          ),
+          if (instrument.isin != null) ...[
+            const SizedBox(width: AppSpacing.md),
+            Text(
+              instrument.isin!,
+              style: AppTypography.mono(
+                size: 10,
+                color: AppColors.textMutedDark,
+              ),
+            ),
+          ],
+          const SizedBox(width: AppSpacing.lg),
+          SizedBox(
+            width: 96,
+            child: Text(
+              quote == null ? '—' : _formatPrice(instrument, quote!),
+              textAlign: TextAlign.right,
+              style: AppTypography.mono(
+                size: 13,
+                weight: FontWeight.w600,
+                color: AppColors.textPrimaryDark,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 72,
+            child: Text(
+              quote == null ? '' : _formatChange(quote!),
+              textAlign: TextAlign.right,
+              style: AppTypography.mono(
+                size: 12,
+                color: changeColor,
+              ),
+            ),
           ),
         ],
+      ),
+    );
+  }
+
+  static String _formatPrice(Instrument instrument, Quote quote) {
+    if (instrument.assetClass == AssetClass.bond) {
+      return '${quote.price.toStringAsFixed(3)}%';
+    }
+    return formatMoney(quote.price);
+  }
+
+  static String _formatChange(Quote quote) {
+    final percent = quote.changePercent;
+    if (percent == null) return '—';
+    final sign = percent > 0 ? '+' : '';
+    return '$sign${percent.toStringAsFixed(2)}%';
+  }
+
+  static Color _changeColor(double? percent) {
+    if (percent == null) return AppColors.neutral;
+    if (percent > 0) return AppColors.positive;
+    if (percent < 0) return AppColors.negative;
+    return AppColors.neutral;
+  }
+}
+
+class _EmptyResults extends StatelessWidget {
+  const _EmptyResults();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Text(
+        'NO INSTRUMENTS MATCH',
+        style: AppTypography.mono(
+          size: 11,
+          color: AppColors.textMutedDark,
+          letterSpacing: 1.0,
+        ),
       ),
     );
   }
