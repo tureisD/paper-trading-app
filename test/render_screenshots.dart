@@ -72,36 +72,56 @@ void main() {
         provider: 'binance',
         providerSymbol: 'BTCUSDT',
       );
-      instruments.upsertAll([apple, bitcoin]);
+      const spy = Instrument(
+        symbol: 'SPY',
+        name: 'SPDR S&P 500 ETF Trust',
+        assetClass: AssetClass.etf,
+        isin: 'US78462F1030',
+        provider: 'yahoo',
+      );
+      instruments.upsertAll([apple, bitcoin, spy]);
 
-      ledger.append(ledger.deposit(amount: 100000, at: DateTime.utc(2026, 1, 1, 9)));
+      ledger.append(
+        ledger.deposit(amount: 100000, at: DateTime.utc(2026, 10, 11, 9)),
+      );
+
+      void buy(Instrument instrument, double quantity, double price, int day) {
+        engine.submit(
+          instrument: instrument,
+          side: OrderSide.buy,
+          type: OrderType.market,
+          quantity: quantity,
+          quote: _quote(instrument.symbol, price),
+          now: DateTime.utc(2026, 10, day, 10),
+        );
+      }
+
+      buy(apple, 20, 180, 12);
+      buy(bitcoin, 0.5, 65000, 13);
+      buy(spy, 10, 500, 14);
+
+      // One winning and one losing close, so win/loss has data.
       engine.submit(
         instrument: apple,
-        side: OrderSide.buy,
+        side: OrderSide.sell,
         type: OrderType.market,
-        quantity: 10,
-        quote: _quote('AAPL', 345),
-        now: DateTime.utc(2026, 1, 1, 10),
-      );
-      engine.submit(
-        instrument: bitcoin,
-        side: OrderSide.buy,
-        type: OrderType.market,
-        quantity: 0.5,
-        quote: _quote('BTC-USD', 65000),
-        now: DateTime.utc(2026, 1, 1, 11),
+        quantity: 5,
+        quote: _quote('AAPL', 200),
+        now: DateTime.utc(2026, 10, 15, 10),
       );
       engine.submit(
         instrument: apple,
         side: OrderSide.sell,
         type: OrderType.market,
-        quantity: 2,
-        quote: _quote('AAPL', 350),
-        now: DateTime.utc(2026, 1, 1, 12),
+        quantity: 5,
+        quote: _quote('AAPL', 170),
+        now: DateTime.utc(2026, 10, 16, 10),
       );
+
       quotes.saveAll([
-        _quote('AAPL', 350),
-        _quote('BTC-USD', 65000),
+        _quote('AAPL', 210, previousClose: 205),
+        _quote('BTC-USD', 66000, previousClose: 64000),
+        _quote('SPY', 505, previousClose: 502),
       ]);
 
       final syncConfig = SyncConfigStore(db);
@@ -127,8 +147,6 @@ void main() {
                 providers: const [],
               ),
               engine: engine,
-              positions: positions,
-              accountId: AccountRepository.defaultAccountId,
               syncEngine: SyncEngine(
                 database: db,
                 ledger: ledger,
@@ -156,11 +174,13 @@ void main() {
   );
 }
 
-Quote _quote(String symbol, double price) => Quote.derive(
+Quote _quote(String symbol, double price, {double? previousClose}) =>
+    Quote.derive(
       symbol: symbol,
       price: price,
+      previousClose: previousClose,
       source: 'screenshot',
-      asOf: DateTime.utc(2026, 1, 1, 12),
+      asOf: DateTime.utc(2026, 10, 17, 12),
     );
 
 Future<void> _loadBrandFonts() async {

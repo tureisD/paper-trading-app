@@ -11,7 +11,6 @@ import 'market/market_data_service.dart';
 import 'market/quote_repository.dart';
 import 'sync/sync_config_store.dart';
 import 'sync/sync_engine.dart';
-import 'trading/account_repository.dart';
 import 'trading/pending_order_repository.dart';
 import 'trading/position_repository.dart';
 import 'trading/trading_engine.dart';
@@ -66,8 +65,6 @@ class PaperTradingApp extends StatelessWidget {
           quotes: quotes,
         ),
         engine: engine,
-        positions: positions,
-        accountId: AccountRepository.defaultAccountId,
         syncEngine: syncEngine,
       ),
     );

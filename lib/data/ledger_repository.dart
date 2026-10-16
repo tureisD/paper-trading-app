@@ -141,6 +141,15 @@ class LedgerRepository {
     return row['c'] as int;
   }
 
+  /// Total cash ever deposited (used as the return denominator).
+  double netDeposits() {
+    final row = _db.raw.select(
+      "SELECT COALESCE(SUM(quantity), 0) AS d FROM ledger_events "
+      "WHERE event_type = 'CASH_DEPOSIT';",
+    ).first;
+    return (row['d'] as num).toDouble();
+  }
+
   /// Derived cash balance (never stored). Mirrors the replay rules in roadmap 5.2.
   double cashBalance() {
     final row = _db.raw.select('''

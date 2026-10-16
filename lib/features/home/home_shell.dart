@@ -13,17 +13,17 @@ import '../../market/models/quote.dart';
 import '../../market/providers/market_data_provider.dart';
 import '../../market/quote_repository.dart';
 import '../../sync/sync_engine.dart';
-import '../../trading/portfolio.dart';
-import '../../trading/position_repository.dart';
 import '../../trading/trading_engine.dart';
+import '../common/primitives.dart';
+import '../portfolio/portfolio_tab.dart';
 import '../sync/sync_dialog.dart';
 import '../trade/order_ticket.dart';
 
-/// Virtual cash added by the "DEPOSIT CASH" action / opening balance.
+/// Virtual cash added by the "DEPOSIT CASH" action.
 const double kDepositAmount = 100000.0;
 
-/// The application frame: a dense top bar, a two-tab body, and a bottom
-/// segmented control (thumb-first on Android, `Ctrl+1`/`Ctrl+2` on Windows).
+/// The application frame: dense top bar, two-tab body, bottom segmented nav
+/// (thumb-first on Android, `Ctrl+1`/`Ctrl+2` on Windows).
 class HomeShell extends StatefulWidget {
   const HomeShell({
     super.key,
@@ -34,8 +34,6 @@ class HomeShell extends StatefulWidget {
     required this.quotes,
     required this.marketData,
     required this.engine,
-    required this.positions,
-    required this.accountId,
     required this.syncEngine,
   });
 
@@ -46,8 +44,6 @@ class HomeShell extends StatefulWidget {
   final QuoteRepository quotes;
   final MarketDataService marketData;
   final TradingEngine engine;
-  final PositionRepository positions;
-  final String accountId;
   final SyncEngine syncEngine;
 
   @override
@@ -72,6 +68,16 @@ class _HomeShellState extends State<HomeShell> {
     }
   }
 
+  void _selectTab(int index) {
+    if (index == _tab) return;
+    setState(() => _tab = index);
+  }
+
+  void _deposit() {
+    widget.ledger.append(widget.ledger.deposit(amount: kDepositAmount));
+    setState(() {});
+  }
+
   Future<void> _syncNow() async {
     final outcome = await widget.syncEngine.syncNow();
     if (!mounted) return;
@@ -92,19 +98,6 @@ class _HomeShellState extends State<HomeShell> {
       setState(() => _syncOutcome = widget.syncEngine.lastOutcome);
     }
   }
-
-  void _selectTab(int index) {
-    if (index == _tab) return;
-    setState(() => _tab = index);
-  }
-
-  void _deposit() {
-    widget.ledger.append(widget.ledger.deposit(amount: kDepositAmount));
-    setState(() {});
-  }
-
-  /// Called after an order fills so derived views re-read the ledger.
-  void _afterTrade() => setState(() {});
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
@@ -127,11 +120,6 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
-    final cash = widget.ledger.cashBalance();
-    final openPositions = widget.positions.all(widget.accountId);
-    final realisedPnl =
-        openPositions.fold<double>(0.0, (sum, p) => sum + p.realisedPnl);
-
     return Scaffold(
       body: Focus(
         autofocus: true,
@@ -149,21 +137,19 @@ class _HomeShellState extends State<HomeShell> {
               child: IndexedStack(
                 index: _tab,
                 children: [
-                  _PortfolioTab(
+                  PortfolioTab(
                     databasePath: widget.databasePath,
-                    journalMode: widget.database.journalMode,
-                    schemaVersion: widget.database.schemaVersion,
-                    ledgerCount: widget.database.ledgerEventCount(),
-                    cash: cash,
-                    realisedPnl: realisedPnl,
-                    positions: openPositions,
-                    instrumentCount: widget.database.instrumentCount(),
-                    onDeposit: _deposit,
+                    ledger: widget.ledger,
+                    instruments: widget.instruments,
+                    quotes: widget.quotes,
+                    marketData: widget.marketData,
+                    engine: widget.engine,
                     syncEngine: widget.syncEngine,
                     syncOutcome: _syncOutcome,
                     pendingSync: widget.ledger.pendingCount(),
                     onOpenSync: _openSyncDialog,
                     onSyncNow: _syncNow,
+                    onDeposit: _deposit,
                   ),
                   _DiscoveryTab(
                     key: _discoveryKey,
@@ -171,7 +157,7 @@ class _HomeShellState extends State<HomeShell> {
                     quotes: widget.quotes,
                     marketData: widget.marketData,
                     engine: widget.engine,
-                    onTraded: _afterTrade,
+                    onTraded: () => setState(() {}),
                   ),
                 ],
               ),
@@ -373,273 +359,6 @@ class _StatusPill extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Tab 1 — Portfolio: engine read, account summary, positions
-// ---------------------------------------------------------------------------
-
-class _PortfolioTab extends StatelessWidget {
-  const _PortfolioTab({
-    required this.databasePath,
-    required this.journalMode,
-    required this.schemaVersion,
-    required this.ledgerCount,
-    required this.cash,
-    required this.realisedPnl,
-    required this.positions,
-    required this.instrumentCount,
-    required this.onDeposit,
-    required this.syncEngine,
-    required this.syncOutcome,
-    required this.pendingSync,
-    required this.onOpenSync,
-    required this.onSyncNow,
-  });
-
-  final String databasePath;
-  final String journalMode;
-  final int schemaVersion;
-  final int ledgerCount;
-  final double cash;
-  final double realisedPnl;
-  final List<Position> positions;
-  final int instrumentCount;
-  final VoidCallback onDeposit;
-  final SyncEngine syncEngine;
-  final SyncOutcome? syncOutcome;
-  final int pendingSync;
-  final VoidCallback onOpenSync;
-  final VoidCallback onSyncNow;
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _Panel(
-            title: 'ACCOUNT',
-            trailing: _GhostButton(label: 'DEPOSIT CASH', onPressed: onDeposit),
-            child: Column(
-              children: [
-                _KeyValueRow(
-                  label: 'CASH BALANCE',
-                  value: formatMoney(cash),
-                  mono: true,
-                  emphasis: true,
-                ),
-                _KeyValueRow(
-                  label: 'REALISED P&L',
-                  value: formatMoney(realisedPnl),
-                  mono: true,
-                  valueColor: realisedPnl > 0
-                      ? AppColors.positive
-                      : realisedPnl < 0
-                          ? AppColors.negative
-                          : AppColors.textPrimaryDark,
-                ),
-                _KeyValueRow(
-                  label: 'OPEN POSITIONS',
-                  value: '${positions.length}',
-                  mono: true,
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Portfolio state is never stored — it is replayed from the '
-                    'append-only ledger on every read.',
-                    style: AppTypography.ui(
-                      size: 12,
-                      color: AppColors.textMutedDark,
-                      height: 1.4,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          _Panel(
-            title: 'SYNC (GIST VAULT)',
-            trailing: _GhostButton(label: 'SETUP / SYNC', onPressed: onOpenSync),
-            child: Column(
-              children: [
-                _KeyValueRow(
-                  label: 'STATUS',
-                  value: syncOutcome?.label ?? 'LOCAL ONLY',
-                  mono: true,
-                  valueColor: _syncColour(syncOutcome?.state),
-                ),
-                _KeyValueRow(
-                  label: 'VAULT',
-                  value: syncEngine.config.gistId ?? 'not connected',
-                  mono: true,
-                ),
-                _KeyValueRow(
-                  label: 'PENDING EVENTS',
-                  value: '$pendingSync',
-                  mono: true,
-                ),
-                _KeyValueRow(
-                  label: 'LAST SYNC',
-                  value: _formatClock(syncEngine.config.lastSyncAt),
-                  mono: true,
-                ),
-                if (syncOutcome?.message != null)
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: AppSpacing.xs),
-                      child: Text(
-                        syncOutcome!.message!,
-                        style: AppTypography.mono(
-                          size: 11,
-                          color: AppColors.negative,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          _Panel(
-            title: 'POSITIONS (CACHE)',
-            trailing: Text(
-              'MARK-TO-MARKET IN PHASE 5',
-              style: AppTypography.mono(
-                size: 9,
-                color: AppColors.textMutedDark,
-                letterSpacing: 0.4,
-              ),
-            ),
-            child: positions.isEmpty
-                ? _EmptyLine(text: 'NO OPEN POSITIONS')
-                : Column(
-                    children: [
-                      const _PositionHeader(),
-                      for (final position in positions)
-                        _PositionRow(position: position),
-                    ],
-                  ),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          _Panel(
-            title: 'LOCAL ENGINE',
-            child: Column(
-              children: [
-                _KeyValueRow(label: 'DATABASE', value: databasePath, mono: true),
-                _KeyValueRow(label: 'JOURNAL', value: journalMode.toUpperCase(), mono: true),
-                _KeyValueRow(label: 'SCHEMA', value: 'v$schemaVersion', mono: true),
-                _KeyValueRow(label: 'LEDGER EVENTS', value: '$ledgerCount', mono: true),
-                _KeyValueRow(label: 'INSTRUMENTS (FTS5)', value: '$instrumentCount', mono: true),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PositionHeader extends StatelessWidget {
-  const _PositionHeader();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-      child: Row(
-        children: [
-          _col('SYMBOL', 110, alignRight: false),
-          _col('CLASS', 70, alignRight: false),
-          _col('QTY', 110),
-          _col('AVG COST', 110),
-          _col('COST BASIS', 110),
-          _col('REALISED P&L', 120),
-        ],
-      ),
-    );
-  }
-
-  Widget _col(String label, double width, {bool alignRight = true}) {
-    return SizedBox(
-      width: width,
-      child: Text(
-        label,
-        textAlign: alignRight ? TextAlign.right : TextAlign.left,
-        style: AppTypography.label(AppColors.textMutedDark),
-      ),
-    );
-  }
-}
-
-class _PositionRow extends StatelessWidget {
-  const _PositionRow({required this.position});
-
-  final Position position;
-
-  @override
-  Widget build(BuildContext context) {
-    final realised = position.realisedPnl;
-    final realisedColor = realised > 0
-        ? AppColors.positive
-        : realised < 0
-            ? AppColors.negative
-            : AppColors.textSecondaryDark;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 110,
-            child: Text(
-              position.symbol,
-              style: AppTypography.mono(
-                size: 12,
-                weight: FontWeight.w600,
-                color: AppColors.textPrimaryDark,
-              ),
-            ),
-          ),
-          SizedBox(
-            width: 70,
-            child: Text(
-              position.assetClass.wire,
-              style: AppTypography.mono(
-                size: 9,
-                color: AppColors.textMutedDark,
-              ),
-            ),
-          ),
-          _num(position.quantity.toStringAsFixed(
-            position.assetClass == AssetClass.crypto ? 8 : 4,
-          ), 110),
-          _num(formatMoney(position.averageCost), 110),
-          _num(formatMoney(position.costBasis), 110),
-          _num(formatMoney(realised), 120, color: realisedColor),
-        ],
-      ),
-    );
-  }
-
-  Widget _num(String value, double width, {Color? color}) {
-    return SizedBox(
-      width: width,
-      child: Text(
-        value,
-        textAlign: TextAlign.right,
-        style: AppTypography.mono(
-          size: 12,
-          color: color ?? AppColors.textPrimaryDark,
-        ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Tab 2 — Multi-asset discovery (FTS5 search + live quotes + trading)
 // ---------------------------------------------------------------------------
 
@@ -819,7 +538,7 @@ class _DiscoveryTabState extends State<_DiscoveryTab> {
                   ),
                 ),
               const SizedBox(width: AppSpacing.sm),
-              _GhostButton(
+              GhostButton(
                 label: 'REFRESH QUOTES',
                 onPressed: _refreshing ? () {} : refreshQuotes,
               ),
@@ -854,7 +573,7 @@ class _DiscoveryTabState extends State<_DiscoveryTab> {
           ),
         Expanded(
           child: _results.isEmpty
-              ? const _EmptyLine(text: 'NO INSTRUMENTS MATCH')
+              ? const EmptyLine(text: 'NO INSTRUMENTS MATCH')
               : ListView.builder(
                   itemCount: _results.length,
                   itemBuilder: (context, index) {
@@ -1122,187 +841,6 @@ class _InstrumentRow extends StatelessWidget {
     if (percent < 0) return AppColors.negative;
     return AppColors.neutral;
   }
-}
-
-// ---------------------------------------------------------------------------
-// Shared primitives
-// ---------------------------------------------------------------------------
-
-class _Panel extends StatelessWidget {
-  const _Panel({required this.title, required this.child, this.trailing});
-
-  final String title;
-  final Widget child;
-  final Widget? trailing;
-
-  @override
-  Widget build(BuildContext context) {
-    final hairline = Theme.of(context).dividerColor;
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.panelDark,
-        border: Border.all(color: hairline, width: AppBorders.hairline),
-        borderRadius: AppRadii.mdAll,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            height: 32,
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-            decoration: BoxDecoration(
-              color: AppColors.raisedDark,
-              border: Border(
-                bottom: BorderSide(color: hairline, width: AppBorders.hairline),
-              ),
-            ),
-            child: Row(
-              children: [
-                Text(
-                  title,
-                  style: AppTypography.label(AppColors.textSecondaryDark),
-                ),
-                const Spacer(),
-                ?trailing,
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            child: child,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _KeyValueRow extends StatelessWidget {
-  const _KeyValueRow({
-    required this.label,
-    required this.value,
-    this.mono = false,
-    this.emphasis = false,
-    this.valueColor,
-  });
-
-  final String label;
-  final String value;
-  final bool mono;
-  final bool emphasis;
-  final Color? valueColor;
-
-  @override
-  Widget build(BuildContext context) {
-    final base = mono
-        ? AppTypography.mono(
-            size: emphasis ? 16 : 12,
-            weight: emphasis ? FontWeight.w600 : FontWeight.w400,
-            color: valueColor ?? AppColors.textPrimaryDark,
-          )
-        : AppTypography.ui(size: 12, color: AppColors.textPrimaryDark);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 170,
-            child: Text(
-              label,
-              style: AppTypography.label(AppColors.textMutedDark),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: base,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _EmptyLine extends StatelessWidget {
-  const _EmptyLine({required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
-      child: Center(
-        child: Text(
-          text,
-          style: AppTypography.mono(
-            size: 11,
-            color: AppColors.textMutedDark,
-            letterSpacing: 1.0,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _GhostButton extends StatelessWidget {
-  const _GhostButton({required this.label, required this.onPressed});
-
-  final String label;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return TextButton(
-      onPressed: onPressed,
-      style: TextButton.styleFrom(
-        minimumSize: const Size(0, 22),
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        foregroundColor: AppColors.textSecondaryDark,
-        shape: RoundedRectangleBorder(
-          side: const BorderSide(
-            color: AppColors.hairlineDark,
-            width: AppBorders.hairline,
-          ),
-          borderRadius: AppRadii.smAll,
-        ),
-        textStyle: AppTypography.mono(
-          size: 10,
-          weight: FontWeight.w600,
-          letterSpacing: 0.6,
-        ),
-      ),
-      child: Text(label),
-    );
-  }
-}
-
-Color? _syncColour(SyncState? state) {
-  switch (state) {
-    case SyncState.synced:
-      return AppColors.positive;
-    case SyncState.error:
-      return AppColors.negative;
-    case SyncState.offline:
-      return AppColors.warning;
-    case SyncState.syncing:
-      return AppColors.focus;
-    case SyncState.notConfigured:
-    case null:
-      return AppColors.textPrimaryDark;
-  }
-}
-
-String _formatClock(DateTime? value) {
-  if (value == null) return '—';
-  final local = value.toLocal();
-  String two(int v) => v.toString().padLeft(2, '0');
-  return '${two(local.hour)}:${two(local.minute)}:${two(local.second)}';
 }
 
 // ---------------------------------------------------------------------------

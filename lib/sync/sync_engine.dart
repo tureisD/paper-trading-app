@@ -193,7 +193,7 @@ class SyncEngine {
   List<String> _monthKeysOf(Iterable<LedgerEvent> events) {
     final keys = <String>{};
     for (final event in events) {
-      final month = Hlc.parse(event.hlcTimestamp).month;
+      final month = Hlc.parse(event.hlcTimestamp).instant;
       keys.add(_monthKey(month));
     }
     return keys.toList()..sort();

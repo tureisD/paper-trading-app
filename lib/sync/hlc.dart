@@ -30,8 +30,8 @@ class Hlc implements Comparable<Hlc> {
     return Hlc(parsed?.toUtc().millisecondsSinceEpoch ?? 0, counter);
   }
 
-  /// Month key (`yyyy-MM`) used for shard rotation.
-  DateTime get month =>
+  /// The instant this clock value represents.
+  DateTime get instant =>
       DateTime.fromMillisecondsSinceEpoch(physicalMs, isUtc: true);
 
   @override

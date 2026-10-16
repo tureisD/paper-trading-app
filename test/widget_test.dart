@@ -20,7 +20,10 @@ void main() {
     await tester.tap(find.text('DEPOSIT CASH'));
     await tester.pump();
 
-    expect(find.text(r'$100,000.00'), findsOneWidget);
+    // Cash now shows in both Net Liquidation Value and Buying Power.
+    expect(find.text(r'$100,000.00'), findsWidgets);
+    expect(find.text('ANALYTICS'), findsOneWidget);
+    expect(find.text('HOLDINGS'), findsOneWidget);
   });
 
   testWidgets('switches tabs from the segmented control', (tester) async {

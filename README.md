@@ -18,7 +18,7 @@ for the full roadmap and architecture.
 | **2** | Multi-asset market data (search + quotes) | ✅ Done |
 | **3** | Double-entry trading engine | ✅ Done |
 | **4** | GitHub Gist cross-device sync | ✅ Done |
-| 5 | Tab 1 — Holdings & P&L | ⬜ Not started |
+| **5** | Tab 1 — Holdings, overview & P&L | ✅ Done |
 | 6 | Tab 2 — Search & order ticket | ⬜ Not started |
 | 7 | Profiling & native packaging | ⬜ Not started |
 
@@ -48,12 +48,15 @@ The local SQLite database is created per-user:
 
 ```
 lib/
+  analytics/       portfolio metrics, equity curve, trade statistics
   core/            ids (UUIDv7), formatting helpers
   data/            SQLite database, versioned schema, ledger repository
   design/          design tokens + Material theme
+  features/common/ shared UI primitives
   features/home/   application shell (two-tab frame)
-  features/trade/   order ticket
-  features/sync/    vault setup dialog
+  features/portfolio/ Tab 1 - summary, holdings, analytics
+  features/sync/   vault setup dialog
+  features/trade/  order ticket
   market/          asset classes, providers, catalog search, quote cache
   sync/            HLC, shard codec, gist client, sync engine
   trading/         ledger replay, WAC accounting, matching engine
@@ -140,6 +143,32 @@ gist):
 ```bash
 TB_GIST_TOKEN=... flutter test test/sync_smoke.dart
 ```
+
+## Portfolio analytics (Phase 5)
+
+**Summary header** — Net Liquidation Value (cash + market value), Day P&L,
+Total P&L (realised + unrealised), Buying Power and Accrued Bond Interest
+Receivable. `MARK TO MARKET` refreshes quotes for everything held (Tab 1 also
+marks the book once on first display).
+
+**Holdings table** — symbol, ISIN, asset-class badge, quantity, average cost,
+last price, market value, unrealised \$/%, and portfolio weight. Rows are sorted
+by market value.
+
+**Analytics drawer** — canvas equity curve with 1D/1W/1M/1Y/ALL ranges, plus
+realised P&L, win/loss ratio, maximum drawdown and Sharpe ratio, and a
+monochrome asset-allocation bar.
+
+Bases worth knowing (all documented in the UI too):
+
+- The **equity curve** marks each historical point at the *last traded price*
+  per instrument (the only historical price the app stores) and the most recent
+  point at live quotes. No historical price feed is required, and no backfilled
+  fiction is invented.
+- **Sharpe** uses daily observations, a 0% risk-free rate and √252
+  annualisation; it reports `—` until there are at least three days of history.
+- **Win/loss** counts closing (sell) trades by realised P&L under the same
+  Weighted Average Cost replay used everywhere else.
 
 ## Design review screenshots
 
