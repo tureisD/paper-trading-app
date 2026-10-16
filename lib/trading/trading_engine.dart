@@ -379,12 +379,8 @@ class TradingEngine {
       }
     }
 
-    final event = LedgerEvent(
-      eventId: Ids.uuidV7(now: timestamp),
-      hlcTimestamp: timestamp.toIso8601String(),
-      deviceId: currentDeviceId(),
-      eventType:
-          order.side == OrderSide.buy ? EventType.buy : EventType.sell,
+    final event = ledger.newEvent(
+      eventType: order.side == OrderSide.buy ? EventType.buy : EventType.sell,
       symbol: order.symbol,
       assetClass: assetClass.wire,
       quantity: order.quantity,
@@ -393,6 +389,7 @@ class TradingEngine {
       accruedInterest: accrued,
       fee: fee,
       currency: instrument.currency,
+      at: timestamp,
     );
     ledger.append(event);
 
@@ -464,14 +461,12 @@ class TradingEngine {
     double amount,
     DateTime timestamp,
   ) {
-    final event = LedgerEvent(
-      eventId: Ids.uuidV7(now: timestamp),
-      hlcTimestamp: timestamp.toIso8601String(),
-      deviceId: currentDeviceId(),
+    final event = ledger.newEvent(
       eventType: EventType.bondCoupon,
       symbol: symbol,
       assetClass: AssetClass.bond.wire,
       quantity: amount,
+      at: timestamp,
     );
     ledger.append(event);
     database.raw.execute(

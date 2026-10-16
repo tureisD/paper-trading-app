@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 
+import 'core/ids.dart';
 import 'data/app_database.dart';
 import 'data/ledger_repository.dart';
+import 'data/schema.dart';
 import 'design/app_theme.dart';
 import 'features/home/home_shell.dart';
 import 'market/instrument_repository.dart';
 import 'market/market_data_service.dart';
 import 'market/quote_repository.dart';
+import 'sync/sync_config_store.dart';
+import 'sync/sync_engine.dart';
 import 'trading/account_repository.dart';
 import 'trading/pending_order_repository.dart';
 import 'trading/position_repository.dart';
@@ -28,7 +32,8 @@ class PaperTradingApp extends StatelessWidget {
   Widget build(BuildContext context) {
     final instruments = InstrumentRepository(database);
     final quotes = QuoteRepository(database);
-    final ledger = LedgerRepository(database);
+    final deviceId = currentDeviceId();
+    final ledger = LedgerRepository(database, deviceId: deviceId);
     final positions = PositionRepository(database);
     final engine = TradingEngine(
       database: database,
@@ -36,6 +41,14 @@ class PaperTradingApp extends StatelessWidget {
       orders: PendingOrderRepository(database),
       positions: positions,
       instruments: instruments,
+    );
+    final syncEngine = SyncEngine(
+      database: database,
+      ledger: ledger,
+      config: SyncConfigStore(database),
+      deviceId: deviceId,
+      schemaVersion: Schema.version,
+      onMerged: engine.rebuildCache,
     );
 
     return MaterialApp(
@@ -55,6 +68,7 @@ class PaperTradingApp extends StatelessWidget {
         engine: engine,
         positions: positions,
         accountId: AccountRepository.defaultAccountId,
+        syncEngine: syncEngine,
       ),
     );
   }

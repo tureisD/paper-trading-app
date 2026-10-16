@@ -17,7 +17,7 @@ for the full roadmap and architecture.
 | **1** | Core engine, local SQLite, design tokens | ✅ Done |
 | **2** | Multi-asset market data (search + quotes) | ✅ Done |
 | **3** | Double-entry trading engine | ✅ Done |
-| 4 | GitHub Gist cross-device sync | ⬜ Not started |
+| **4** | GitHub Gist cross-device sync | ✅ Done |
 | 5 | Tab 1 — Holdings & P&L | ⬜ Not started |
 | 6 | Tab 2 — Search & order ticket | ⬜ Not started |
 | 7 | Profiling & native packaging | ⬜ Not started |
@@ -53,7 +53,9 @@ lib/
   design/          design tokens + Material theme
   features/home/   application shell (two-tab frame)
   features/trade/   order ticket
+  features/sync/    vault setup dialog
   market/          asset classes, providers, catalog search, quote cache
+  sync/            HLC, shard codec, gist client, sync engine
   trading/         ledger replay, WAC accounting, matching engine
 ```
 
@@ -100,6 +102,44 @@ mutated in place (roadmap §4.1, §5.2).
   as local time shifts the schedule by a day — see `BondMath.parseDateUtc`).
 - **Note**: pending orders are device-local working state; only fills enter the
   synced ledger.
+
+## Cross-device sync (Phase 4)
+
+Portfolio history syncs through **one secret GitHub Gist that you own** — no
+backend, and no account beyond GitHub.
+
+- **Ledger, not balances**: only immutable events move between devices. Both
+  sides replay the same events and derive identical state.
+- **Hybrid Logical Clock**: each event carries a UUIDv7 plus an HLC stamp
+  (`<iso8601>#<counter>`) that stays monotonic even if the devices' clocks
+  disagree.
+- **One shard per device per month**: `ledger.<device>.<yyyy-MM>.ndjson`. A
+  device only ever rewrites its own current-month file, so two devices cannot
+  clobber each other and no shard grows without bound. `meta.json` lists the
+  participating devices.
+- **Cheap polling**: conditional `GET` with `If-None-Match`; a `304` costs no
+  rate-limit budget, and nothing is pushed when there is nothing new.
+- **Token at rest**: the GitHub token is encrypted with **Windows DPAPI**
+  (`CryptProtectData`) through `dart:ffi` before being written to SQLite — no
+  plugin, and only the same Windows user can decrypt it.
+
+### Setup
+
+1. Create a token with the `gists` scope (classic) or the **Gists** user
+   permission, read and write (fine-grained).
+2. In the app open **SYNC (GIST VAULT) → SETUP / SYNC**, paste the token, leave
+   the gist id blank to create a vault (or paste an existing one to link a
+   second device), then **CONNECT & SYNC**.
+
+The header pill reports `SYNCED • GIST • 12ms`, `SYNCING…`,
+`OFFLINE • QUEUED (n)` or `SYNC ERROR`.
+
+A live two-device test is available (creates and deletes a temporary secret
+gist):
+
+```bash
+TB_GIST_TOKEN=... flutter test test/sync_smoke.dart
+```
 
 ## Design review screenshots
 

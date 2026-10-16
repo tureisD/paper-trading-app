@@ -12,9 +12,11 @@ import '../../market/models/instrument.dart';
 import '../../market/models/quote.dart';
 import '../../market/providers/market_data_provider.dart';
 import '../../market/quote_repository.dart';
+import '../../sync/sync_engine.dart';
 import '../../trading/portfolio.dart';
 import '../../trading/position_repository.dart';
 import '../../trading/trading_engine.dart';
+import '../sync/sync_dialog.dart';
 import '../trade/order_ticket.dart';
 
 /// Virtual cash added by the "DEPOSIT CASH" action / opening balance.
@@ -34,6 +36,7 @@ class HomeShell extends StatefulWidget {
     required this.engine,
     required this.positions,
     required this.accountId,
+    required this.syncEngine,
   });
 
   final AppDatabase database;
@@ -45,6 +48,7 @@ class HomeShell extends StatefulWidget {
   final TradingEngine engine;
   final PositionRepository positions;
   final String accountId;
+  final SyncEngine syncEngine;
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -56,9 +60,37 @@ class _HomeShellState extends State<HomeShell> {
   final GlobalKey<_DiscoveryTabState> _discoveryKey =
       GlobalKey<_DiscoveryTabState>();
 
+  SyncOutcome? _syncOutcome;
+
   @override
   void initState() {
     super.initState();
+    _syncOutcome = widget.syncEngine.lastOutcome;
+    // Silent background pull/push when a vault is already configured.
+    if (widget.syncEngine.isConfigured) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _syncNow());
+    }
+  }
+
+  Future<void> _syncNow() async {
+    final outcome = await widget.syncEngine.syncNow();
+    if (!mounted) return;
+    setState(() => _syncOutcome = outcome);
+  }
+
+  Future<void> _openSyncDialog() async {
+    await showSyncDialog(
+      context,
+      engine: widget.syncEngine,
+      onChanged: () {
+        if (mounted) {
+          setState(() => _syncOutcome = widget.syncEngine.lastOutcome);
+        }
+      },
+    );
+    if (mounted) {
+      setState(() => _syncOutcome = widget.syncEngine.lastOutcome);
+    }
   }
 
   void _selectTab(int index) {
@@ -109,7 +141,9 @@ class _HomeShellState extends State<HomeShell> {
             _TopBar(
               journalMode: widget.database.journalMode,
               schemaVersion: widget.database.schemaVersion,
-              pending: widget.engine.workingOrders().length,
+              pendingSync: widget.ledger.pendingCount(),
+              syncOutcome: _syncOutcome,
+              onSyncTap: _openSyncDialog,
             ),
             Expanded(
               child: IndexedStack(
@@ -125,6 +159,11 @@ class _HomeShellState extends State<HomeShell> {
                     positions: openPositions,
                     instrumentCount: widget.database.instrumentCount(),
                     onDeposit: _deposit,
+                    syncEngine: widget.syncEngine,
+                    syncOutcome: _syncOutcome,
+                    pendingSync: widget.ledger.pendingCount(),
+                    onOpenSync: _openSyncDialog,
+                    onSyncNow: _syncNow,
                   ),
                   _DiscoveryTab(
                     key: _discoveryKey,
@@ -153,12 +192,16 @@ class _TopBar extends StatelessWidget {
   const _TopBar({
     required this.journalMode,
     required this.schemaVersion,
-    required this.pending,
+    required this.pendingSync,
+    required this.syncOutcome,
+    required this.onSyncTap,
   });
 
   final String journalMode;
   final int schemaVersion;
-  final int pending;
+  final int pendingSync;
+  final SyncOutcome? syncOutcome;
+  final VoidCallback onSyncTap;
 
   @override
   Widget build(BuildContext context) {
@@ -208,7 +251,11 @@ class _TopBar extends StatelessWidget {
             ),
           ),
           const Spacer(),
-          _StatusPill(pending: pending),
+          _StatusPill(
+            pending: pendingSync,
+            outcome: syncOutcome,
+            onTap: onSyncTap,
+          ),
         ],
       ),
     );
@@ -251,42 +298,75 @@ class _TbMark extends StatelessWidget {
 }
 
 class _StatusPill extends StatelessWidget {
-  const _StatusPill({required this.pending});
+  const _StatusPill({
+    required this.pending,
+    required this.outcome,
+    required this.onTap,
+  });
 
   final int pending;
+  final SyncOutcome? outcome;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: AppSpacing.xs,
-      ),
-      decoration: BoxDecoration(
-        border: Border.all(color: AppColors.hairlineDark, width: AppBorders.hairline),
-        borderRadius: AppRadii.smAll,
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 6,
-            height: 6,
-            decoration: const BoxDecoration(
-              color: AppColors.warning, // swatch: local-only until Phase 4.
-              shape: BoxShape.circle,
-            ),
+    final state = outcome?.state;
+    late final String label;
+    late final Color colour;
+
+    switch (state) {
+      case SyncState.synced:
+        label = outcome!.label;
+        colour = AppColors.positive;
+      case SyncState.syncing:
+        label = 'SYNCING…';
+        colour = AppColors.focus;
+      case SyncState.error:
+        label = 'SYNC ERROR • QUEUED ($pending)';
+        colour = AppColors.negative;
+      case SyncState.offline:
+        label = 'OFFLINE • QUEUED ($pending)';
+        colour = AppColors.warning;
+      case SyncState.notConfigured:
+      case null:
+        label = 'LOCAL • QUEUED ($pending)';
+        colour = AppColors.warning;
+    }
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
+          vertical: AppSpacing.xs,
+        ),
+        decoration: BoxDecoration(
+          border: Border.all(
+            color: AppColors.hairlineDark,
+            width: AppBorders.hairline,
           ),
-          const SizedBox(width: AppSpacing.xs),
-          Text(
-            'LOCAL • QUEUED ($pending)',
-            style: AppTypography.mono(
-              size: 11,
-              weight: FontWeight.w600,
-              color: AppColors.textSecondaryDark,
-              letterSpacing: 0.4,
+          borderRadius: AppRadii.smAll,
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(color: colour, shape: BoxShape.circle),
             ),
-          ),
-        ],
+            const SizedBox(width: AppSpacing.xs),
+            Text(
+              label,
+              style: AppTypography.mono(
+                size: 11,
+                weight: FontWeight.w600,
+                color: AppColors.textSecondaryDark,
+                letterSpacing: 0.4,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -307,6 +387,11 @@ class _PortfolioTab extends StatelessWidget {
     required this.positions,
     required this.instrumentCount,
     required this.onDeposit,
+    required this.syncEngine,
+    required this.syncOutcome,
+    required this.pendingSync,
+    required this.onOpenSync,
+    required this.onSyncNow,
   });
 
   final String databasePath;
@@ -318,6 +403,11 @@ class _PortfolioTab extends StatelessWidget {
   final List<Position> positions;
   final int instrumentCount;
   final VoidCallback onDeposit;
+  final SyncEngine syncEngine;
+  final SyncOutcome? syncOutcome;
+  final int pendingSync;
+  final VoidCallback onOpenSync;
+  final VoidCallback onSyncNow;
 
   @override
   Widget build(BuildContext context) {
@@ -365,6 +455,50 @@ class _PortfolioTab extends StatelessWidget {
                     ),
                   ),
                 ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          _Panel(
+            title: 'SYNC (GIST VAULT)',
+            trailing: _GhostButton(label: 'SETUP / SYNC', onPressed: onOpenSync),
+            child: Column(
+              children: [
+                _KeyValueRow(
+                  label: 'STATUS',
+                  value: syncOutcome?.label ?? 'LOCAL ONLY',
+                  mono: true,
+                  valueColor: _syncColour(syncOutcome?.state),
+                ),
+                _KeyValueRow(
+                  label: 'VAULT',
+                  value: syncEngine.config.gistId ?? 'not connected',
+                  mono: true,
+                ),
+                _KeyValueRow(
+                  label: 'PENDING EVENTS',
+                  value: '$pendingSync',
+                  mono: true,
+                ),
+                _KeyValueRow(
+                  label: 'LAST SYNC',
+                  value: _formatClock(syncEngine.config.lastSyncAt),
+                  mono: true,
+                ),
+                if (syncOutcome?.message != null)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: AppSpacing.xs),
+                      child: Text(
+                        syncOutcome!.message!,
+                        style: AppTypography.mono(
+                          size: 11,
+                          color: AppColors.negative,
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -1146,6 +1280,29 @@ class _GhostButton extends StatelessWidget {
       child: Text(label),
     );
   }
+}
+
+Color? _syncColour(SyncState? state) {
+  switch (state) {
+    case SyncState.synced:
+      return AppColors.positive;
+    case SyncState.error:
+      return AppColors.negative;
+    case SyncState.offline:
+      return AppColors.warning;
+    case SyncState.syncing:
+      return AppColors.focus;
+    case SyncState.notConfigured:
+    case null:
+      return AppColors.textPrimaryDark;
+  }
+}
+
+String _formatClock(DateTime? value) {
+  if (value == null) return '—';
+  final local = value.toLocal();
+  String two(int v) => v.toString().padLeft(2, '0');
+  return '${two(local.hour)}:${two(local.minute)}:${two(local.second)}';
 }
 
 // ---------------------------------------------------------------------------

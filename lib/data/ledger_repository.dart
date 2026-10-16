@@ -1,15 +1,25 @@
 import '../core/ids.dart';
+import '../sync/hlc.dart';
 import 'app_database.dart';
 import 'models/ledger_event.dart';
 
 /// Read/write access to the append-only event ledger.
 ///
-/// There are deliberately no UPDATE or DELETE paths for events: the ledger is
-/// immutable, and portfolio state is derived by replaying it.
+/// There are deliberately no UPDATE or DELETE paths for event content: the
+/// ledger is immutable and portfolio state is derived by replaying it.
 class LedgerRepository {
-  LedgerRepository(this._db);
+  LedgerRepository(this._db, {String? deviceId})
+      : _deviceId = deviceId ?? currentDeviceId(),
+        _clock = _initClock(_db);
 
   final AppDatabase _db;
+  final String _deviceId;
+  final HlcClock _clock;
+
+  /// Identity stamped on events this repository writes.
+  String get deviceId => _deviceId;
+
+  HlcClock get clock => _clock;
 
   static const String _insertSql = '''
     INSERT INTO ledger_events (
@@ -18,25 +28,69 @@ class LedgerRepository {
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
   ''';
 
-  /// Appends an event to the local ledger, queued for sync (`synced = 0`).
-  void append(LedgerEvent event) {
-    _db.raw.execute(_insertSql, event.toSqlParams());
+  static HlcClock _initClock(AppDatabase db) {
+    final rows =
+        db.raw.select('SELECT max(hlc_timestamp) AS m FROM ledger_events;');
+    final value = rows.first['m'] as String?;
+    return HlcClock(value == null ? null : Hlc.parse(value));
   }
 
-  /// Convenience builder that fills ids/timestamps/device automatically.
-  LedgerEvent deposit({
-    required double amount,
+  /// Builds a new event stamped with a UUIDv7 id and a monotonic HLC.
+  LedgerEvent newEvent({
+    required String eventType,
+    String? symbol,
+    String? assetClass,
+    double quantity = 0.0,
+    double executionPrice = 0.0,
+    double accruedInterest = 0.0,
+    double fee = 0.0,
     String currency = 'USD',
     DateTime? at,
   }) {
     final now = at ?? DateTime.now();
     return LedgerEvent(
       eventId: Ids.uuidV7(now: now),
-      hlcTimestamp: now.toUtc().toIso8601String(),
-      deviceId: currentDeviceId(),
+      hlcTimestamp: _clock.next(now: now).encode(),
+      deviceId: _deviceId,
+      eventType: eventType,
+      symbol: symbol,
+      assetClass: assetClass,
+      quantity: quantity,
+      executionPrice: executionPrice,
+      accruedInterest: accruedInterest,
+      fee: fee,
+      currency: currency,
+    );
+  }
+
+  /// Appends an event to the local ledger, queued for sync (`synced = 0`).
+  void append(LedgerEvent event) {
+    _db.raw.execute(_insertSql, event.toSqlParams());
+  }
+
+  /// Inserts a remote event if we have not already seen its id.
+  /// Returns true when the row was new.
+  bool insertIfAbsent(LedgerEvent event) {
+    final existing = _db.raw.select(
+      'SELECT 1 FROM ledger_events WHERE event_id = ?;',
+      [event.eventId],
+    );
+    if (existing.isNotEmpty) return false;
+    _db.raw.execute(_insertSql, event.toSqlParams());
+    return true;
+  }
+
+  /// Convenience builder for a cash deposit.
+  LedgerEvent deposit({
+    required double amount,
+    String currency = 'USD',
+    DateTime? at,
+  }) {
+    return newEvent(
       eventType: EventType.cashDeposit,
       quantity: amount,
       currency: currency,
+      at: at,
     );
   }
 
@@ -46,6 +100,38 @@ class LedgerRepository {
         .select('SELECT * FROM ledger_events ORDER BY hlc_timestamp, event_id;');
     return rows.map(LedgerEvent.fromRow).toList(growable: false);
   }
+
+  /// Events created on this device that still need to reach the vault.
+  List<LedgerEvent> pendingEvents() {
+    final rows = _db.raw.select(
+      'SELECT * FROM ledger_events WHERE synced = 0 ORDER BY hlc_timestamp;',
+    );
+    return rows.map(LedgerEvent.fromRow).toList(growable: false);
+  }
+
+  /// All events this device wrote in a given `yyyy-MM` month.
+  List<LedgerEvent> deviceEventsInMonth(String deviceId, String monthKey) {
+    final rows = _db.raw.select(
+      'SELECT * FROM ledger_events WHERE device_id = ? AND hlc_timestamp LIKE ? '
+      'ORDER BY hlc_timestamp;',
+      [deviceId, '$monthKey%'],
+    );
+    return rows.map(LedgerEvent.fromRow).toList(growable: false);
+  }
+
+  /// Marks events as confirmed in the vault.
+  void markSynced(Iterable<String> eventIds) {
+    final ids = eventIds.toList(growable: false);
+    if (ids.isEmpty) return;
+    final placeholders = List.filled(ids.length, '?').join(', ');
+    _db.raw.execute(
+      'UPDATE ledger_events SET synced = 1 WHERE event_id IN ($placeholders);',
+      ids,
+    );
+  }
+
+  /// Advances the HLC past a remote event so local writes sort after it.
+  void observeHlc(String encoded) => _clock.observe(Hlc.parse(encoded));
 
   /// Events still awaiting push to the gist.
   int pendingCount() {

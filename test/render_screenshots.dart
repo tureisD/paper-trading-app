@@ -15,6 +15,8 @@ import 'package:paper_trading_app/market/market_data_service.dart';
 import 'package:paper_trading_app/market/models/instrument.dart';
 import 'package:paper_trading_app/market/models/quote.dart';
 import 'package:paper_trading_app/market/quote_repository.dart';
+import 'package:paper_trading_app/sync/sync_config_store.dart';
+import 'package:paper_trading_app/sync/sync_engine.dart';
 import 'package:paper_trading_app/trading/account_repository.dart';
 import 'package:paper_trading_app/trading/order.dart';
 import 'package:paper_trading_app/trading/pending_order_repository.dart';
@@ -102,6 +104,9 @@ void main() {
         _quote('BTC-USD', 65000),
       ]);
 
+      final syncConfig = SyncConfigStore(db);
+      syncConfig.gistId = 'a1b2c3d4e5f6071829304b5c6d7e8f90';
+
       final boundaryKey = GlobalKey();
       await tester.pumpWidget(
         RepaintBoundary(
@@ -124,6 +129,12 @@ void main() {
               engine: engine,
               positions: positions,
               accountId: AccountRepository.defaultAccountId,
+              syncEngine: SyncEngine(
+                database: db,
+                ledger: ledger,
+                config: syncConfig,
+                deviceId: 'windows_desktop',
+              ),
             ),
           ),
         ),
