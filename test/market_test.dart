@@ -258,6 +258,26 @@ void main() {
         payload.instruments.map((e) => e.assetClass).toSet(),
         containsAll(AssetClass.values),
       );
+      expect(payload.version, greaterThanOrEqualTo(2));
+      expect(
+        payload.instruments
+            .where((i) => i.assetClass == AssetClass.etf)
+            .every((i) => i.expenseRatio != null),
+        isTrue,
+        reason: 'ETFs should carry an expense ratio for the detail sheet',
+      );
+    });
+
+    test('parses the catalog version and expense ratios', () {
+      const raw = '''
+      {"version":7,"instruments":[
+        {"symbol":"SPY","name":"SPDR S&P 500 ETF Trust","assetClass":"ETF",
+         "expenseRatio":0.0945,"provider":"yahoo"}
+      ]}''';
+
+      final payload = CatalogImporter.parse(raw);
+      expect(payload.version, 7);
+      expect(payload.instruments.single.expenseRatio, closeTo(0.0945, 1e-9));
     });
   });
 }

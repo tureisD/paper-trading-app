@@ -512,4 +512,76 @@ void main() {
       expect(BondMath.cleanPrice(99.75, 1.25), closeTo(98.5, 1e-9));
     });
   });
+
+  group('BondMath pricing and duration', () {
+    const par = 100.0;
+    const coupon = 0.05;
+    const frequency = 2;
+    const periods = 10;
+
+    test('prices a fixed-rate bond from its yield', () {
+      final price = BondMath.priceFromYield(
+        parValue: par,
+        annualCouponRate: coupon,
+        paymentsPerYear: frequency,
+        annualYield: 0.04,
+        periodsToMaturity: periods,
+      );
+      expect(price, closeTo(104.4913, 1e-3));
+    });
+
+    test('inverts price back to yield', () {
+      final price = BondMath.priceFromYield(
+        parValue: par,
+        annualCouponRate: coupon,
+        paymentsPerYear: frequency,
+        annualYield: 0.04,
+        periodsToMaturity: periods,
+      );
+      final ytm = BondMath.yieldToMaturity(
+        price: price,
+        parValue: par,
+        annualCouponRate: coupon,
+        paymentsPerYear: frequency,
+        periodsToMaturity: periods,
+      );
+      expect(ytm, closeTo(0.04, 1e-6));
+    });
+
+    test('yields a premium price when the coupon beats the yield', () {
+      final price = BondMath.priceFromYield(
+        parValue: par,
+        annualCouponRate: 0.06,
+        paymentsPerYear: frequency,
+        annualYield: 0.04,
+        periodsToMaturity: periods,
+      );
+      expect(price, greaterThan(par));
+    });
+
+    test('modified duration matches numeric differentiation', () {
+      double price(double yield) => BondMath.priceFromYield(
+            parValue: par,
+            annualCouponRate: coupon,
+            paymentsPerYear: frequency,
+            annualYield: yield,
+            periodsToMaturity: periods,
+          );
+
+      final analytic = BondMath.modifiedDuration(
+        parValue: par,
+        annualCouponRate: coupon,
+        paymentsPerYear: frequency,
+        annualYield: 0.04,
+        periodsToMaturity: periods,
+      );
+      const step = 1e-5;
+      final numeric =
+          -((price(0.04 + step) - price(0.04 - step)) / price(0.04)) /
+              (2 * step);
+
+      expect(analytic, closeTo(numeric, 1e-4));
+      expect(analytic, greaterThan(0));
+    });
+  });
 }

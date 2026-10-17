@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 /// Fixed-income mathematics (roadmap section 4.3).
 class BondMath {
   const BondMath._();
@@ -25,6 +27,118 @@ class BondMath {
   /// Clean price from a dirty price.
   static double cleanPrice(double dirtyPrice, double accruedInterest) =>
       dirtyPrice - accruedInterest;
+
+  /// Present value of a fixed-rate bond's remaining cash flows.
+  static double priceFromYield({
+    required double parValue,
+    required double annualCouponRate,
+    required int paymentsPerYear,
+    required double annualYield,
+    required int periodsToMaturity,
+  }) {
+    if (paymentsPerYear <= 0 || periodsToMaturity <= 0) return parValue;
+    final coupon = parValue * annualCouponRate / paymentsPerYear;
+    final rate = annualYield / paymentsPerYear;
+    var presentValue = 0.0;
+    for (var k = 1; k <= periodsToMaturity; k++) {
+      presentValue += coupon / math.pow(1 + rate, k);
+    }
+    presentValue += parValue / math.pow(1 + rate, periodsToMaturity);
+    return presentValue;
+  }
+
+  /// Yield to maturity implied by a price, via bisection.
+  static double? yieldToMaturity({
+    required double price,
+    required double parValue,
+    required double annualCouponRate,
+    required int paymentsPerYear,
+    required int periodsToMaturity,
+    double low = -0.9,
+    double high = 5.0,
+  }) {
+    if (paymentsPerYear <= 0 || periodsToMaturity <= 0) return null;
+
+    double residual(double yield) =>
+        priceFromYield(
+          parValue: parValue,
+          annualCouponRate: annualCouponRate,
+          paymentsPerYear: paymentsPerYear,
+          annualYield: yield,
+          periodsToMaturity: periodsToMaturity,
+        ) -
+        price;
+
+    var lo = low;
+    var hi = high;
+    var fLo = residual(lo);
+    final fHi = residual(hi);
+    if (fLo * fHi > 0) return null; // No sign change: not solvable here.
+
+    for (var i = 0; i < 200; i++) {
+      final mid = (lo + hi) / 2;
+      final fMid = residual(mid);
+      if (fMid.abs() < 1e-10) return mid;
+      if (fLo * fMid <= 0) {
+        hi = mid;
+      } else {
+        lo = mid;
+        fLo = fMid;
+      }
+    }
+    return (lo + hi) / 2;
+  }
+
+  /// Macaulay duration in years.
+  static double macaulayDuration({
+    required double parValue,
+    required double annualCouponRate,
+    required int paymentsPerYear,
+    required double annualYield,
+    required int periodsToMaturity,
+  }) {
+    if (paymentsPerYear <= 0 || periodsToMaturity <= 0) return 0;
+    final price = priceFromYield(
+      parValue: parValue,
+      annualCouponRate: annualCouponRate,
+      paymentsPerYear: paymentsPerYear,
+      annualYield: annualYield,
+      periodsToMaturity: periodsToMaturity,
+    );
+    if (price == 0) return 0;
+
+    final coupon = parValue * annualCouponRate / paymentsPerYear;
+    final rate = annualYield / paymentsPerYear;
+    var weighted = 0.0;
+    for (var k = 1; k <= periodsToMaturity; k++) {
+      weighted +=
+          (k / paymentsPerYear) * (coupon / math.pow(1 + rate, k));
+    }
+    weighted += (periodsToMaturity / paymentsPerYear) *
+        (parValue / math.pow(1 + rate, periodsToMaturity));
+    return weighted / price;
+  }
+
+  /// Modified duration in years: Macaulay / (1 + y/m).
+  ///
+  /// Approximates the percentage price change per unit yield shift.
+  static double modifiedDuration({
+    required double parValue,
+    required double annualCouponRate,
+    required int paymentsPerYear,
+    required double annualYield,
+    required int periodsToMaturity,
+  }) {
+    if (paymentsPerYear <= 0) return 0;
+    final macaulay = macaulayDuration(
+      parValue: parValue,
+      annualCouponRate: annualCouponRate,
+      paymentsPerYear: paymentsPerYear,
+      annualYield: annualYield,
+      periodsToMaturity: periodsToMaturity,
+    );
+    return macaulay / (1 + annualYield / paymentsPerYear);
+  }
 
   static int daysBetween(DateTime from, DateTime to) =>
       to.toUtc().difference(from.toUtc()).inDays;

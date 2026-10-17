@@ -14,8 +14,8 @@ class InstrumentRepository {
   static const String _upsertSql = '''
     INSERT INTO instruments (
       symbol, name, asset_class, exchange, currency, isin, cusip,
-      provider, provider_symbol, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      provider, provider_symbol, expense_ratio, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(symbol) DO UPDATE SET
       name = excluded.name,
       asset_class = excluded.asset_class,
@@ -25,6 +25,7 @@ class InstrumentRepository {
       cusip = excluded.cusip,
       provider = excluded.provider,
       provider_symbol = excluded.provider_symbol,
+      expense_ratio = excluded.expense_ratio,
       updated_at = excluded.updated_at;
   ''';
 
@@ -99,8 +100,7 @@ class InstrumentRepository {
     }
   }
 
-  Instrument? get(String symbol) {
-    final rows =
+  Instrument? get(String symbol) {    final rows =
         _db.raw.select('SELECT * FROM instruments WHERE symbol = ?;', [symbol]);
     return rows.isEmpty ? null : Instrument.fromRow(rows.first);
   }
@@ -151,6 +151,12 @@ class InstrumentRepository {
     final rows = _db.raw.select(sql.toString(), params);
     return rows.map(Instrument.fromRow).toList(growable: false);
   }
+
+  /// Bundled catalog version already imported into this database.
+  String? get catalogVersion => _db.getSyncState('catalog.version');
+
+  set catalogVersion(String? value) =>
+      _db.setSyncState('catalog.version', value);
 
   int count() =>
       _db.raw.select('SELECT count(*) AS c FROM instruments;').first['c'] as int;

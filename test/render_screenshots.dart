@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -12,8 +13,10 @@ import 'package:paper_trading_app/features/home/home_shell.dart';
 import 'package:paper_trading_app/market/asset_class.dart';
 import 'package:paper_trading_app/market/instrument_repository.dart';
 import 'package:paper_trading_app/market/market_data_service.dart';
+import 'package:paper_trading_app/market/models/candle.dart';
 import 'package:paper_trading_app/market/models/instrument.dart';
 import 'package:paper_trading_app/market/models/quote.dart';
+import 'package:paper_trading_app/market/providers/market_data_provider.dart';
 import 'package:paper_trading_app/market/quote_repository.dart';
 import 'package:paper_trading_app/sync/sync_config_store.dart';
 import 'package:paper_trading_app/sync/sync_engine.dart';
@@ -23,17 +26,17 @@ import 'package:paper_trading_app/trading/pending_order_repository.dart';
 import 'package:paper_trading_app/trading/position_repository.dart';
 import 'package:paper_trading_app/trading/trading_engine.dart';
 
-/// Dev utility: renders the app offscreen to a PNG for design review.
+/// Dev utility: renders the app offscreen to PNGs for design review.
 ///
 /// Disabled by default so it never slows down or writes files during normal
 /// runs. Enable explicitly:
 ///
-///   RENDER_SCREENSHOTS=1 flutter test test/render_screenshots_test.dart
+///   RENDER_SCREENSHOTS=1 flutter test test/render_screenshots.dart
 void main() {
   final enabled = Platform.environment['RENDER_SCREENSHOTS'] == '1';
 
   testWidgets(
-    'renders the portfolio tab with open positions',
+    'renders the portfolio and discovery tabs',
     skip: !enabled,
     (tester) async {
       await _loadBrandFonts();
@@ -65,6 +68,13 @@ void main() {
         isin: 'US0378331005',
         provider: 'yahoo',
       );
+      const microsoft = Instrument(
+        symbol: 'MSFT',
+        name: 'Microsoft Corporation',
+        assetClass: AssetClass.stock,
+        isin: 'US5949181045',
+        provider: 'yahoo',
+      );
       const bitcoin = Instrument(
         symbol: 'BTC-USD',
         name: 'Bitcoin',
@@ -79,7 +89,14 @@ void main() {
         isin: 'US78462F1030',
         provider: 'yahoo',
       );
-      instruments.upsertAll([apple, bitcoin, spy]);
+      const dgs10 = Instrument(
+        symbol: 'DGS10',
+        name: 'US Treasury 10-Year Yield (CMT)',
+        assetClass: AssetClass.bond,
+        provider: 'fred',
+        providerSymbol: 'DGS10',
+      );
+      instruments.upsertAll([apple, microsoft, bitcoin, spy, dgs10]);
 
       ledger.append(
         ledger.deposit(amount: 100000, at: DateTime.utc(2026, 10, 11, 9)),
@@ -100,7 +117,6 @@ void main() {
       buy(bitcoin, 0.5, 65000, 13);
       buy(spy, 10, 500, 14);
 
-      // One winning and one losing close, so win/loss has data.
       engine.submit(
         instrument: apple,
         side: OrderSide.sell,
@@ -122,6 +138,7 @@ void main() {
         _quote('AAPL', 210, previousClose: 205),
         _quote('BTC-USD', 66000, previousClose: 64000),
         _quote('SPY', 505, previousClose: 502),
+        _quote('MSFT', 412, previousClose: 408),
       ]);
 
       final syncConfig = SyncConfigStore(db);
@@ -136,15 +153,15 @@ void main() {
             theme: AppTheme.dark(),
             home: HomeShell(
               database: db,
-              databasePath: r'C:\Users\Dmitry Koryakin\AppData\Roaming\PaperTradingApp\paper_trading.db',
+              databasePath:
+                  r'C:\Users\Dmitry Koryakin\AppData\Roaming\PaperTradingApp\paper_trading.db',
               ledger: ledger,
               instruments: instruments,
               quotes: quotes,
-              // No providers: keeps the render offline (no http clients).
               marketData: MarketDataService(
                 instruments: instruments,
                 quotes: quotes,
-                providers: const [],
+                providers: [_FakeProvider()],
               ),
               engine: engine,
               syncEngine: SyncEngine(
@@ -159,19 +176,44 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final boundary = boundaryKey.currentContext!.findRenderObject()!
-          as RenderRepaintBoundary;
-      final image = await boundary.toImage(pixelRatio: 1.0);
-      final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
-      image.dispose();
+      final view = Platform.environment['RENDER_VIEW'] ?? 'portfolio';
+      if (view == 'discovery') {
+        // Bounded pumps: the tree keeps async work alive, so settle can hang.
+        await tester.tap(find.text('DISCOVERY'));
+        await _settle(tester);
+        await tester.enterText(find.byType(TextField).first, 'msft');
+        await _settle(tester);
+        await tester.tap(find.text('MSFT'));
+        await _settle(tester);
+      }
 
       final out = Platform.environment['RENDER_OUT'] ??
-          r'C:\Users\Dmitry Koryakin\AppData\Local\Temp\opencode\phase3_portfolio.png';
-      File(out).writeAsBytesSync(bytes!.buffer.asUint8List());
-      // ignore: avoid_print
-      print('rendered -> $out');
+          r'C:\Users\Dmitry Koryakin\AppData\Local\Temp\opencode\screens.png';
+      await _capture(tester, boundaryKey, out);
     },
   );
+}
+
+/// Advances a few frames without waiting for the tree to go fully quiescent.
+Future<void> _settle(WidgetTester tester) async {
+  for (var i = 0; i < 8; i++) {
+    await tester.pump(const Duration(milliseconds: 60));
+  }
+}
+
+Future<void> _capture(
+  WidgetTester tester,
+  GlobalKey boundaryKey,
+  String path,
+) async {
+  final boundary =
+      boundaryKey.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+  final image = await boundary.toImage(pixelRatio: 1.0);
+  final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+  image.dispose();
+  File(path).writeAsBytesSync(bytes!.buffer.asUint8List());
+  // ignore: avoid_print
+  print('rendered -> $path');
 }
 
 Quote _quote(String symbol, double price, {double? previousClose}) =>
@@ -182,6 +224,51 @@ Quote _quote(String symbol, double price, {double? previousClose}) =>
       source: 'screenshot',
       asOf: DateTime.utc(2026, 10, 17, 12),
     );
+
+/// Deterministic offline market data so screenshots never touch the network.
+class _FakeProvider implements MarketDataProvider {
+  @override
+  String get id => 'yahoo';
+
+  @override
+  Set<AssetClass> get supported => AssetClass.values.toSet();
+
+  @override
+  Future<Quote> fetchQuote({
+    required String symbol,
+    required String providerSymbol,
+    String currency = 'USD',
+  }) async =>
+      _quote(symbol, 412, previousClose: 408);
+
+  @override
+  Future<List<Candle>> fetchCandles({
+    required String providerSymbol,
+    String interval = '1d',
+    int limit = 90,
+  }) async {
+    final now = DateTime.utc(2026, 10, 17);
+    final candles = <Candle>[];
+    var price = 392.0;
+    for (var i = limit; i > 0; i--) {
+      final drift = math.sin(i / 6.5) * 5.5 + math.cos(i / 2.7) * 2.5;
+      final open = price;
+      final close = price + drift;
+      candles.add(
+        Candle(
+          time: now.subtract(Duration(days: i)),
+          open: open,
+          high: math.max(open, close) + 1.5 + (i % 4),
+          low: math.min(open, close) - 1.2 - (i % 3),
+          close: close,
+          volume: 1.0e6 + (i % 9) * 1.2e5,
+        ),
+      );
+      price = close;
+    }
+    return candles;
+  }
+}
 
 Future<void> _loadBrandFonts() async {
   const fonts = {

@@ -14,6 +14,7 @@ class Instrument {
     this.cusip,
     this.provider,
     this.providerSymbol,
+    this.expenseRatio,
   });
 
   /// Canonical local symbol, e.g. `AAPL`, `BTC-USD`, `DGS10`.
@@ -31,6 +32,9 @@ class Instrument {
   /// Provider-specific symbol (e.g. Binance `BTCUSDT`, FRED `DGS10`).
   final String? providerSymbol;
 
+  /// Annual expense ratio as a percentage (ETFs and funds only).
+  final double? expenseRatio;
+
   factory Instrument.fromRow(Row row) {
     return Instrument(
       symbol: row['symbol'] as String,
@@ -42,6 +46,7 @@ class Instrument {
       cusip: row['cusip'] as String?,
       provider: row['provider'] as String?,
       providerSymbol: row['provider_symbol'] as String?,
+      expenseRatio: (row['expense_ratio'] as num?)?.toDouble(),
     );
   }
 
@@ -55,6 +60,7 @@ class Instrument {
         cusip,
         provider,
         providerSymbol,
+        expenseRatio,
       ];
 
   Map<String, dynamic> toJson() => <String, dynamic>{
@@ -67,6 +73,7 @@ class Instrument {
         if (cusip != null) 'cusip': cusip,
         if (provider != null) 'provider': provider,
         if (providerSymbol != null) 'providerSymbol': providerSymbol,
+        if (expenseRatio != null) 'expenseRatio': expenseRatio,
       };
 
   static Instrument fromJson(Map<String, dynamic> json) => Instrument(
@@ -79,6 +86,7 @@ class Instrument {
         cusip: json['cusip'] as String?,
         provider: json['provider'] as String?,
         providerSymbol: json['providerSymbol'] as String?,
+        expenseRatio: (json['expenseRatio'] as num?)?.toDouble(),
       );
 }
 

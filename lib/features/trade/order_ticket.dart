@@ -8,10 +8,21 @@ import '../../market/models/instrument.dart';
 import '../../market/models/quote.dart';
 import '../../market/providers/market_data_provider.dart';
 import '../../market/quote_repository.dart';
+import '../../trading/fee_model.dart';
 import '../../trading/order.dart';
 import '../../trading/trading_engine.dart';
 
-/// Opens the compact market-order ticket and returns the resulting trade.
+/// Sizing mode for the quantity field.
+enum SizeMode {
+  units('UNITS'),
+  cash('CASH');
+
+  const SizeMode(this.label);
+
+  final String label;
+}
+
+/// Opens the order ticket in a modal (used on narrow layouts).
 Future<TradeResult?> showOrderTicket(
   BuildContext context, {
   required TradingEngine engine,
@@ -22,40 +33,63 @@ Future<TradeResult?> showOrderTicket(
   return showDialog<TradeResult>(
     context: context,
     barrierColor: const Color(0xCC000000),
-    builder: (_) => _OrderTicket(
-      engine: engine,
-      marketData: marketData,
-      quotes: quotes,
-      instrument: instrument,
+    builder: (dialogContext) => Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      child: SizedBox(
+        width: 460,
+        child: OrderTicket(
+          engine: engine,
+          marketData: marketData,
+          quotes: quotes,
+          instrument: instrument,
+          onClose: () => Navigator.of(dialogContext).pop(),
+        ),
+      ),
     ),
   );
 }
 
-class _OrderTicket extends StatefulWidget {
-  const _OrderTicket({
+/// The order ticket body. Embeds directly in the Tab 2 split pane, or inside a
+/// dialog on narrow layouts.
+class OrderTicket extends StatefulWidget {
+  const OrderTicket({
+    super.key,
     required this.engine,
     required this.marketData,
     required this.quotes,
     required this.instrument,
+    this.onClose,
+    this.onCompleted,
   });
 
   final TradingEngine engine;
   final MarketDataService marketData;
   final QuoteRepository quotes;
   final Instrument instrument;
+  final VoidCallback? onClose;
+  final void Function(TradeResult result)? onCompleted;
 
   @override
-  State<_OrderTicket> createState() => _OrderTicketState();
+  State<OrderTicket> createState() => _OrderTicketState();
 }
 
-class _OrderTicketState extends State<_OrderTicket> {
+class _OrderTicketState extends State<OrderTicket> {
   final TextEditingController _quantity = TextEditingController(text: '1');
+  final TextEditingController _limitPrice = TextEditingController();
+  final TextEditingController _stopPrice = TextEditingController();
 
   OrderSide _side = OrderSide.buy;
+  OrderType _type = OrderType.market;
+  SizeMode _mode = SizeMode.units;
+
   Quote? _quote;
   bool _loadingQuote = false;
-  bool _executing = false;
+  bool _submitting = false;
   String? _error;
+  String? _notice;
+
+  bool get _isBond => widget.instrument.assetClass == AssetClass.bond;
 
   @override
   void initState() {
@@ -65,8 +99,21 @@ class _OrderTicketState extends State<_OrderTicket> {
   }
 
   @override
+  void didUpdateWidget(OrderTicket oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.instrument.symbol != widget.instrument.symbol) {
+      _quote = widget.quotes.get(widget.instrument.symbol);
+      _error = null;
+      _notice = null;
+      if (_quote == null) _loadQuote();
+    }
+  }
+
+  @override
   void dispose() {
     _quantity.dispose();
+    _limitPrice.dispose();
+    _stopPrice.dispose();
     super.dispose();
   }
 
@@ -80,33 +127,57 @@ class _OrderTicketState extends State<_OrderTicket> {
       if (mounted) setState(() => _quote = quote);
     } on MarketDataException catch (e) {
       if (mounted) setState(() => _error = e.toString());
+    } catch (e) {
+      if (mounted) setState(() => _error = 'Quote unavailable: $e');
     } finally {
       if (mounted) setState(() => _loadingQuote = false);
     }
   }
 
-  double? get _parsedQuantity =>
-      double.tryParse(_quantity.text.trim().replaceAll(',', ''));
+  double? _parse(TextEditingController controller) =>
+      double.tryParse(controller.text.trim().replaceAll(',', ''));
 
-  double? get _notional {
-    final qty = _parsedQuantity;
-    final quote = _quote;
-    if (qty == null || quote == null) return null;
-    if (widget.instrument.assetClass == AssetClass.bond) return null;
-    return qty * quote.price;
+  /// Resolves the entered size into a unit quantity.
+  double? get _quantityUnits {
+    final entered = _parse(_quantity);
+    final price = _quote?.price;
+    if (entered == null || entered <= 0) return null;
+    if (_mode == SizeMode.units) return entered;
+    if (price == null || price <= 0) return null;
+    return entered / price;
   }
 
-  Future<void> _execute() async {
-    final qty = _parsedQuantity;
-    if (qty == null || qty <= 0) {
-      setState(() => _error = 'Enter a valid quantity');
+  double? get _estimatedNotional {
+    final units = _quantityUnits;
+    final price = _quote?.price;
+    if (units == null || price == null || _isBond) return null;
+    return units * price;
+  }
+
+  Future<void> _submit() async {
+    final units = _quantityUnits;
+    if (units == null) {
+      setState(() => _error = 'Enter a valid ${_mode.label.toLowerCase()} size');
+      return;
+    }
+
+    final limit = _type == OrderType.limit ? _parse(_limitPrice) : null;
+    final stop = _type == OrderType.stop ? _parse(_stopPrice) : null;
+    if (_type == OrderType.limit && limit == null) {
+      setState(() => _error = 'Enter a limit price');
+      return;
+    }
+    if (_type == OrderType.stop && stop == null) {
+      setState(() => _error = 'Enter a stop price');
       return;
     }
 
     setState(() {
-      _executing = true;
+      _submitting = true;
       _error = null;
+      _notice = null;
     });
+
     try {
       var quote = _quote;
       quote ??= await widget.marketData.refreshQuote(widget.instrument);
@@ -114,68 +185,113 @@ class _OrderTicketState extends State<_OrderTicket> {
       final result = widget.engine.submit(
         instrument: widget.instrument,
         side: _side,
-        type: OrderType.market,
-        quantity: qty,
+        type: _type,
+        quantity: units,
         quote: quote,
+        limitPrice: limit,
+        stopPrice: stop,
       );
 
       if (!mounted) return;
-      if (result.isFilled || result.isWorking) {
-        Navigator.of(context).pop(result);
-      } else {
-        setState(() => _error = result.rejectionReason ?? 'Order rejected');
+      switch (result.status) {
+        case OrderStatus.filled:
+          setState(() {
+            _notice = 'FILLED ${_side.wire} ${_trim(units)} @ '
+                '${result.executionPrice?.toStringAsFixed(4)}'
+                '${result.fee > 0 ? ' • fee ${formatMoney(result.fee)}' : ''}';
+          });
+          widget.onCompleted?.call(result);
+        case OrderStatus.pending:
+          setState(() =>
+              _notice = 'RESTING — ${_type.wire} order waiting for a trigger');
+          widget.onCompleted?.call(result);
+        case OrderStatus.queuedNav:
+          setState(() => _notice = 'QUEUED — will settle at the next EOD NAV');
+          widget.onCompleted?.call(result);
+        case OrderStatus.rejected:
+        case OrderStatus.cancelled:
+          setState(() => _error = result.rejectionReason ?? 'Order rejected');
       }
     } on MarketDataException catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
-      if (mounted) setState(() => _executing = false);
+      if (mounted) setState(() => _submitting = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final instrument = widget.instrument;
-    final quote = _quote;
 
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      elevation: 0,
-      child: Container(
-        width: 420,
-        decoration: BoxDecoration(
-          color: AppColors.panelDark,
-          border: Border.all(
-            color: AppColors.hairlineDark,
-            width: AppBorders.hairline,
-          ),
-          borderRadius: AppRadii.mdAll,
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.panelDark,
+        border: Border.all(
+          color: AppColors.hairlineDark,
+          width: AppBorders.hairline,
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _header(instrument),
-            Padding(
-              padding: const EdgeInsets.all(AppSpacing.lg),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _sideToggle(),
-                  const SizedBox(height: AppSpacing.lg),
-                  _row('LAST', _formatPrice(instrument, quote)),
+        borderRadius: AppRadii.mdAll,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _header(instrument),
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _sideToggle(),
+                const SizedBox(height: AppSpacing.md),
+                _chipRow(
+                  label: 'ORDER TYPE',
+                  options: OrderType.values,
+                  selected: _type,
+                  labelOf: (t) => t.wire,
+                  onSelected: (t) => setState(() {
+                    _type = t;
+                    _error = null;
+                  }),
+                ),
+                if (!_isBond) ...[
                   const SizedBox(height: AppSpacing.md),
-                  Text(
-                    'QUANTITY',
-                    style: AppTypography.label(AppColors.textMutedDark),
+                  _chipRow(
+                    label: 'SIZE IN',
+                    options: SizeMode.values,
+                    selected: _mode,
+                    labelOf: (m) => m.label,
+                    onSelected: (m) => setState(() {
+                      _mode = m;
+                      _error = null;
+                    }),
                   ),
-                  const SizedBox(height: AppSpacing.xs),
-                  _quantityField(),
                 ],
-              ),
+                const SizedBox(height: AppSpacing.md),
+                _row('LAST', _formatPrice(_quote)),
+                if (_type == OrderType.limit) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  _labelledField('LIMIT PRICE', _limitPrice, hint: '0.00'),
+                ],
+                if (_type == OrderType.stop) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  _labelledField('STOP PRICE', _stopPrice, hint: '0.00'),
+                ],
+                const SizedBox(height: AppSpacing.sm),
+                _labelledField(
+                  _mode == SizeMode.cash ? 'CASH AMOUNT' : 'QUANTITY',
+                  _quantity,
+                  hint: _mode == SizeMode.cash ? '0.00' : '0.00',
+                  suffix: _mode == SizeMode.cash
+                      ? 'USD'
+                      : (_isBond ? 'UNITS' : _unitLabel(instrument)),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ],
             ),
-            _footer(),
-          ],
-        ),
+          ),
+          _footer(),
+        ],
       ),
     );
   }
@@ -246,7 +362,7 @@ class _OrderTicketState extends State<_OrderTicket> {
         _error = null;
       }),
       child: Container(
-        height: 34,
+        height: 32,
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: active ? accent.withValues(alpha: 0.12) : Colors.transparent,
@@ -266,6 +382,63 @@ class _OrderTicketState extends State<_OrderTicket> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _chipRow<T>({
+    required String label,
+    required List<T> options,
+    required T selected,
+    required String Function(T) labelOf,
+    required ValueChanged<T> onSelected,
+  }) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 92,
+          child: Text(
+            label,
+            style: AppTypography.label(AppColors.textMutedDark),
+          ),
+        ),
+        for (final option in options)
+          Padding(
+            padding: const EdgeInsets.only(right: AppSpacing.sm),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => onSelected(option),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.sm,
+                  vertical: 3,
+                ),
+                decoration: BoxDecoration(
+                  color: option == selected
+                      ? AppColors.panelDark
+                      : Colors.transparent,
+                  border: Border.all(
+                    color: option == selected
+                        ? AppColors.focus
+                        : AppColors.hairlineDark,
+                    width: AppBorders.hairline,
+                  ),
+                  borderRadius: AppRadii.smAll,
+                ),
+                child: Text(
+                  labelOf(option),
+                  style: AppTypography.mono(
+                    size: 10,
+                    weight: FontWeight.w600,
+                    letterSpacing: 0.6,
+                    color: option == selected
+                        ? AppColors.textPrimaryDark
+                        : AppColors.textMutedDark,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -289,58 +462,73 @@ class _OrderTicketState extends State<_OrderTicket> {
     );
   }
 
-  Widget _quantityField() {
-    return Container(
-      height: 36,
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-      decoration: BoxDecoration(
-        color: AppColors.raisedDark,
-        border: Border.all(
-          color: AppColors.hairlineDark,
-          width: AppBorders.hairline,
-        ),
-        borderRadius: AppRadii.smAll,
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: _quantity,
-              autofocus: true,
-              style: AppTypography.mono(
-                size: 14,
-                weight: FontWeight.w600,
-                color: AppColors.textPrimaryDark,
-              ),
-              cursorColor: AppColors.focus,
-              decoration: InputDecoration(
-                isCollapsed: true,
-                border: InputBorder.none,
-                hintText: '0.00',
-                hintStyle: AppTypography.mono(
-                  size: 14,
-                  color: AppColors.textMutedDark,
+  Widget _labelledField(
+    String label,
+    TextEditingController controller, {
+    String? hint,
+    String? suffix,
+    ValueChanged<String>? onChanged,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: AppTypography.label(AppColors.textMutedDark)),
+        const SizedBox(height: AppSpacing.xs),
+        Container(
+          height: 34,
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+          decoration: BoxDecoration(
+            color: AppColors.raisedDark,
+            border: Border.all(
+              color: AppColors.hairlineDark,
+              width: AppBorders.hairline,
+            ),
+            borderRadius: AppRadii.smAll,
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: controller,
+                  onChanged: onChanged,
+                  style: AppTypography.mono(
+                    size: 14,
+                    weight: FontWeight.w600,
+                    color: AppColors.textPrimaryDark,
+                  ),
+                  cursorColor: AppColors.focus,
+                  decoration: InputDecoration(
+                    isCollapsed: true,
+                    border: InputBorder.none,
+                    hintText: hint,
+                    hintStyle: AppTypography.mono(
+                      size: 14,
+                      color: AppColors.textMutedDark,
+                    ),
+                  ),
                 ),
               ),
-              onChanged: (_) => setState(() {}),
-            ),
+              if (suffix != null)
+                Text(
+                  suffix,
+                  style: AppTypography.mono(
+                    size: 10,
+                    color: AppColors.textMutedDark,
+                  ),
+                ),
+            ],
           ),
-          Text(
-            widget.instrument.symbol.contains('-')
-                ? widget.instrument.symbol.split('-').first
-                : 'UNITS',
-            style: AppTypography.mono(
-              size: 10,
-              color: AppColors.textMutedDark,
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   Widget _footer() {
     final hairline = Theme.of(context).dividerColor;
+    final accent = _side == OrderSide.buy
+        ? AppColors.positive
+        : AppColors.negative;
+
     return Container(
       padding: const EdgeInsets.all(AppSpacing.lg),
       decoration: BoxDecoration(
@@ -360,11 +548,22 @@ class _OrderTicketState extends State<_OrderTicket> {
                 letterSpacing: 0.6,
               ),
             ),
-          if (_notional != null)
-            _row('EST. NOTIONAL', formatMoney(_notional!)),
+          if (_estimatedNotional != null)
+            _row('EST. NOTIONAL', formatMoney(_estimatedNotional!)),
+          if (_notice != null)
+            Padding(
+              padding: const EdgeInsets.only(top: AppSpacing.xs),
+              child: Text(
+                _notice!,
+                style: AppTypography.mono(
+                  size: 11,
+                  color: AppColors.positive,
+                ),
+              ),
+            ),
           if (_error != null)
             Padding(
-              padding: const EdgeInsets.only(top: AppSpacing.sm),
+              padding: const EdgeInsets.only(top: AppSpacing.xs),
               child: Text(
                 _error!,
                 style: AppTypography.mono(
@@ -376,25 +575,26 @@ class _OrderTicketState extends State<_OrderTicket> {
           const SizedBox(height: AppSpacing.md),
           Row(
             children: [
-              Expanded(
-                child: TextButton(
-                  onPressed: _executing
-                      ? null
-                      : () => Navigator.of(context).pop(),
-                  style: _buttonStyle(AppColors.textSecondaryDark),
-                  child: Text('CANCEL'),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: TextButton(
-                  onPressed: _executing ? null : _execute,
-                  style: _buttonStyle(
-                    _side == OrderSide.buy
-                        ? AppColors.positive
-                        : AppColors.negative,
+              if (widget.onClose != null) ...[
+                Expanded(
+                  child: TextButton(
+                    onPressed: _submitting ? null : widget.onClose,
+                    style: _buttonStyle(AppColors.textSecondaryDark),
+                    child: const Text('CLOSE'),
                   ),
-                  child: Text(_executing ? 'EXECUTING…' : 'EXECUTE'),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+              ],
+              Expanded(
+                flex: 2,
+                child: TextButton(
+                  onPressed: _submitting ? null : _submit,
+                  style: _buttonStyle(accent),
+                  child: Text(
+                    _submitting
+                        ? 'SUBMITTING…'
+                        : '${_side.wire} ${_type.wire}',
+                  ),
                 ),
               ),
             ],
@@ -405,7 +605,7 @@ class _OrderTicketState extends State<_OrderTicket> {
   }
 
   ButtonStyle _buttonStyle(Color accent) => TextButton.styleFrom(
-        minimumSize: const Size(0, 36),
+        minimumSize: const Size(0, 34),
         shape: RoundedRectangleBorder(
           side: BorderSide(color: accent, width: AppBorders.hairline),
           borderRadius: AppRadii.smAll,
@@ -418,11 +618,38 @@ class _OrderTicketState extends State<_OrderTicket> {
         ),
       );
 
-  static String _formatPrice(Instrument instrument, Quote? quote) {
-    if (quote == null) return '—';
-    if (instrument.assetClass == AssetClass.bond) {
-      return '${quote.price.toStringAsFixed(3)}%';
+  static String _unitLabel(Instrument instrument) {
+    if (instrument.symbol.contains('-')) {
+      return instrument.symbol.split('-').first;
     }
+    return 'UNITS';
+  }
+
+  static String _trim(double value) {
+    final text = value.toString();
+    return text.length <= 10 ? text : value.toStringAsFixed(6);
+  }
+
+  String _formatPrice(Quote? quote) {
+    if (quote == null) return '—';
+    if (_isBond) return '${quote.price.toStringAsFixed(3)}%';
     return formatMoney(quote.price);
   }
 }
+
+/// Exposed for tests: resolve a size entry into units.
+double? resolveUnits({
+  required String entry,
+  required SizeMode mode,
+  required double? price,
+}) {
+  final value = double.tryParse(entry.trim().replaceAll(',', ''));
+  if (value == null || value <= 0) return null;
+  if (mode == SizeMode.units) return value;
+  if (price == null || price <= 0) return null;
+  return value / price;
+}
+
+/// Exposed for tests: the minimum tradeable step for an instrument.
+double minimumStep(Instrument instrument) =>
+    FeeModel.quantityStep(instrument.assetClass);

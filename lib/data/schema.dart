@@ -6,13 +6,14 @@ class Schema {
   const Schema._();
 
   /// Current schema version (== index of the last applied migration).
-  static const int version = 3;
+  static const int version = 4;
 
   /// Ordered migrations. `migrations[0]` takes the DB from v0 -> v1, etc.
   static const List<List<String>> migrations = <List<String>>[
     _v1,
     _v2,
     _v3,
+    _v4,
   ];
 
   /// v1 — append-only event ledger + FTS5 instrument index + sync bookkeeping.
@@ -148,5 +149,10 @@ class Schema {
         PRIMARY KEY (symbol, coupon_date)
     );
     ''',
+  ];
+
+  /// v4 — fund/ETF cost data for the asset detail sheet.
+  static const List<String> _v4 = <String>[
+    'ALTER TABLE instruments ADD COLUMN expense_ratio REAL;',
   ];
 }

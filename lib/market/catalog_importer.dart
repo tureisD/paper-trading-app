@@ -7,8 +7,9 @@ import 'models/instrument.dart';
 
 /// Parsed contents of the seed catalog.
 class CatalogPayload {
-  const CatalogPayload(this.instruments, this.bondDetails);
+  const CatalogPayload(this.version, this.instruments, this.bondDetails);
 
+  final int version;
   final List<Instrument> instruments;
   final Map<String, BondDetails> bondDetails;
 }
@@ -19,22 +20,30 @@ class CatalogImporter {
 
   static const String assetPath = 'assets/data/instruments.json';
 
-  /// Seeds the catalog from the bundled asset when the table is empty.
-  /// Returns the number of instruments written (0 if already seeded).
-  static Future<int> seedIfEmpty(InstrumentRepository repository) async {
-    if (repository.count() > 0) return 0;
+  /// Seeds or refreshes the catalog.
+  ///
+  /// Runs when the table is empty, or when the bundled catalog version is newer
+  /// than the one already imported — so existing installs pick up new fields
+  /// (expense ratios, new instruments) without wiping local state.
+  static Future<int> seedIfNeeded(InstrumentRepository repository) async {
     final raw = await rootBundle.loadString(assetPath);
     final payload = parse(raw);
+    final imported = repository.catalogVersion;
+
+    if (repository.count() > 0 && imported == '${payload.version}') return 0;
+
     repository.upsertAll(
       payload.instruments,
       bondDetails: payload.bondDetails,
     );
+    repository.catalogVersion = '${payload.version}';
     return payload.instruments.length;
   }
 
   /// Parses the catalog JSON (pure function, unit-testable without Flutter).
   static CatalogPayload parse(String raw) {
     final root = jsonDecode(raw) as Map<String, dynamic>;
+    final version = (root['version'] as num?)?.toInt() ?? 1;
     final entries = (root['instruments'] as List?) ?? const [];
     final instruments = <Instrument>[];
     final bonds = <String, BondDetails>{};
@@ -50,6 +59,6 @@ class CatalogImporter {
         );
       }
     }
-    return CatalogPayload(instruments, bonds);
+    return CatalogPayload(version, instruments, bonds);
   }
 }

@@ -22,7 +22,7 @@ Future<void> main() async {
 
   // Seed the local instrument catalog on first launch (offline, bundled asset).
   final instruments = InstrumentRepository(database);
-  await CatalogImporter.seedIfEmpty(instruments);
+  await CatalogImporter.seedIfNeeded(instruments);
 
   // Default account + opening paper balance.
   AccountRepository(database).ensureDefault();

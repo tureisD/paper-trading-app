@@ -19,7 +19,7 @@ for the full roadmap and architecture.
 | **3** | Double-entry trading engine | ✅ Done |
 | **4** | GitHub Gist cross-device sync | ✅ Done |
 | **5** | Tab 1 — Holdings, overview & P&L | ✅ Done |
-| 6 | Tab 2 — Search & order ticket | ⬜ Not started |
+| **6** | Tab 2 — Search & order ticket | ✅ Done |
 | 7 | Profiling & native packaging | ⬜ Not started |
 
 ## Requirements
@@ -53,6 +53,7 @@ lib/
   data/            SQLite database, versioned schema, ledger repository
   design/          design tokens + Material theme
   features/common/ shared UI primitives
+  features/discovery/ Tab 2 - search, chart, detail sheet
   features/home/   application shell (two-tab frame)
   features/portfolio/ Tab 1 - summary, holdings, analytics
   features/sync/   vault setup dialog
@@ -170,12 +171,39 @@ Bases worth knowing (all documented in the UI too):
 - **Win/loss** counts closing (sell) trades by realised P&L under the same
   Weighted Average Cost replay used everywhere else.
 
+## Discovery & execution (Phase 6)
+
+**Split pane** at ≥900 px: the master list on the left, the detail/execution
+sheet on the right. Below that width (Android) a row tap opens the ticket as a
+modal instead.
+
+- **Search** runs locally against the FTS5 index over symbol, name and ISIN,
+  with asset-class filter pills. `/` jumps straight to the search box.
+- **Chart** — candlesticks with a volume strip for equities, ETFs, funds and
+  crypto; a yield line for bond series (which have no intraday range). Ranges:
+  1M / 3M / 6M / 1Y.
+- **Asset-specific metrics** — expense ratio for ETFs and funds; 24h high/low
+  and volume for crypto; for bonds, the yield and change in bp, plus coupon,
+  maturity, computed YTM and modified duration whenever a coupon schedule
+  exists (par-yield indices have none and are labelled as such).
+- **Order ticket** — buy/sell, market / limit / stop, and a units ⇄ cash sizing
+  toggle. Market orders fill immediately; limit and stop orders rest in the
+  local book and are re-evaluated on every quote update; funds queue for the
+  next EOD NAV.
+- **Keymap** — `Ctrl+1` / `Ctrl+2` tabs, `/` search, `Ctrl+R` refresh quotes,
+  `Esc` dismiss.
+
+Schema v4 adds `instruments.expense_ratio`, and the catalog carries a version so
+existing installs refresh their instruments in place instead of re-seeding.
+
 ## Design review screenshots
 
-Renders the Portfolio tab offscreen (no window, no network) to a PNG:
+Renders the app offscreen (no window, no network, deterministic fake provider)
+to a PNG:
 
 ```bash
 RENDER_SCREENSHOTS=1 RENDER_OUT=shot.png flutter test test/render_screenshots.dart
+# add RENDER_VIEW=discovery for the Tab 2 split pane
 ```
 
 Not part of the normal `flutter test` run.
