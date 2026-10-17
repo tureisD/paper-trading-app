@@ -66,6 +66,29 @@ class GistSnapshot {
   final bool notModified;
 }
 
+/// Identity + scopes of a token, used to explain 401/403s precisely.
+class TokenInfo {
+  const TokenInfo({
+    required this.login,
+    this.name,
+    this.scopes = const [],
+    this.scopesKnown = false,
+  });
+
+  final String login;
+  final String? name;
+
+  /// From `x-oauth-scopes`; empty for fine-grained tokens.
+  final List<String> scopes;
+  final bool scopesKnown;
+
+  bool get hasGistScope => !scopesKnown || scopes.contains('gist');
+
+  String get describe => scopesKnown
+      ? '@$login • scopes: ${scopes.isEmpty ? 'none' : scopes.join(', ')}'
+      : '@$login • fine-grained token';
+}
+
 /// Minimal Gist REST client (create/read/patch/delete) with ETag conditional
 /// GETs and rate-limit translation.
 class GistClient {
@@ -85,6 +108,33 @@ class GistClient {
         'X-GitHub-Api-Version': '2022-11-28',
         'User-Agent': 'TureisBanking',
       };
+
+  /// Validates the token and reports who it belongs to and what it can do.
+  ///
+  /// `GET /user` costs no rate-limit budget concerns and returns the scopes in
+  /// `x-oauth-scopes` for classic tokens (fine-grained tokens omit them).
+  Future<TokenInfo> verifyToken() async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/user'),
+      headers: _headers,
+    );
+    _throwIfError(response);
+
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    final scopeHeader = response.headers['x-oauth-scopes'];
+    return TokenInfo(
+      login: (body['login'] as String?) ?? 'unknown',
+      name: body['name'] as String?,
+      scopes: scopeHeader == null
+          ? const []
+          : scopeHeader
+              .split(',')
+              .map((scope) => scope.trim())
+              .where((scope) => scope.isNotEmpty)
+              .toList(growable: false),
+      scopesKnown: scopeHeader != null,
+    );
+  }
 
   /// Conditional GET. Returns [GistSnapshot.notModified] on HTTP 304, which
   /// does not consume the primary rate limit.
@@ -168,16 +218,33 @@ class GistClient {
 
     if (code == 401) {
       throw GistException(
-        'GitHub rejected the token (401). Check the gist scope/permission.',
+        'GitHub rejected the token (401 Bad credentials). It is invalid or '
+        'expired.',
         status: code,
       );
     }
     if (code == 404) {
-      throw GistException('Gist not found (404).', status: code);
+      throw GistException(
+        'GitHub returned 404. Either the gist id is wrong, or the token lacks '
+        'the Gists permission (fine-grained tokens need "Gists: read and write").',
+        status: code,
+      );
     }
     if (code == 403 || code == 429) {
+      final remaining = response.headers['x-ratelimit-remaining'];
       final retryAfter = response.headers['retry-after'];
       final reset = response.headers['x-ratelimit-reset'];
+      final limited = remaining == '0' || retryAfter != null || reset != null;
+
+      if (!limited) {
+        throw GistException(
+          'GitHub refused the request (403). The token is valid but lacks the '
+          'gist scope — classic tokens need "gist", fine-grained tokens need '
+          '"Gists: read and write".',
+          status: code,
+        );
+      }
+
       DateTime? resetAt;
       if (retryAfter != null) {
         final seconds = int.tryParse(retryAfter);

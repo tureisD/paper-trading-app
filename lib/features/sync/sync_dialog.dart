@@ -133,6 +133,10 @@ class _SyncDialogState extends State<_SyncDialog> {
                     widget.engine.deviceId,
                   ),
                   _infoRow(
+                    'ACCOUNT',
+                    widget.engine.config.accountLogin ?? 'not verified',
+                  ),
+                  _infoRow(
                     'VAULT',
                     config.gistId ?? 'not connected',
                   ),
@@ -158,7 +162,8 @@ class _SyncDialogState extends State<_SyncDialog> {
                   Text(
                     'The token needs the "gists" scope (classic) or the Gists '
                     'user permission (fine-grained). It is encrypted with '
-                    'Windows DPAPI before being written to the local database.',
+                    'Windows DPAPI before being written to the local database, '
+                    'and any pasted spaces or line breaks are stripped.',
                     style: AppTypography.ui(
                       size: 11,
                       color: AppColors.textMutedDark,
@@ -326,15 +331,19 @@ class _SyncDialogState extends State<_SyncDialog> {
                 child: TextButton(
                   onPressed: _busy
                       ? null
-                      : (configured && _token.text.trim().isEmpty
-                          ? _syncNow
+                      : (_token.text.trim().isEmpty
+                          ? (configured ? _syncNow : null)
                           : _connect),
-                  style: _buttonStyle(AppColors.focus),
+                  style: _buttonStyle(
+                    _token.text.trim().isEmpty && !configured
+                        ? AppColors.textMutedDark
+                        : AppColors.focus,
+                  ),
                   child: Text(
                     _busy
                         ? 'WORKING…'
-                        : (configured && _token.text.trim().isEmpty
-                            ? 'SYNC NOW'
+                        : (_token.text.trim().isEmpty
+                            ? (configured ? 'SYNC NOW' : 'PASTE A TOKEN')
                             : 'CONNECT & SYNC'),
                   ),
                 ),

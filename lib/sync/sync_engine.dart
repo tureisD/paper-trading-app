@@ -8,6 +8,7 @@ import 'gist_client.dart';
 import 'hlc.dart';
 import 'shard_codec.dart';
 import 'sync_config_store.dart';
+import 'token.dart';
 
 /// Coarse sync state used by the header indicator.
 enum SyncState { notConfigured, syncing, synced, offline, error }
@@ -87,10 +88,30 @@ class SyncEngine {
   bool get isConfigured => config.isConfigured;
 
   /// Creates or links the vault, then performs a first sync.
+  ///
+  /// The token is sanitised and verified first, so a bad or under-scoped token
+  /// produces a specific explanation instead of a bare 401.
   Future<SyncOutcome> connect({required String token, String? gistId}) async {
-    final client = _clientFactory(token);
-    final trimmed = gistId?.trim();
+    final clean = sanitizeToken(token);
+    if (clean.isEmpty) {
+      return _record(
+        SyncState.error,
+        message: 'Paste a GitHub token first (it needs the gist scope).',
+      );
+    }
+
+    final client = _clientFactory(clean);
     try {
+      final info = await client.verifyToken();
+      if (!info.hasGistScope) {
+        return _record(
+          SyncState.error,
+          message: 'The token is valid for ${info.describe}, but it has no '
+              '"gist" scope. Create a new token with that scope.',
+        );
+      }
+
+      final trimmed = gistId?.trim();
       GistSnapshot snapshot;
       if (trimmed != null && trimmed.isNotEmpty) {
         snapshot = await client.getGist(trimmed);
@@ -106,7 +127,8 @@ class SyncEngine {
           },
         );
       }
-      config.token = token;
+      config.token = clean;
+      config.accountLogin = info.login;
       config.gistId = snapshot.id;
       // Leave the ETag unset so the first pull is unconditional.
       config.etag = null;

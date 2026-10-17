@@ -29,9 +29,11 @@ String? _header(http.BaseRequest request, String name) {
 
 /// In-memory stand-in for the Gist REST API: one gist, patchable files, ETags.
 class FakeGist {
-  FakeGist({this.token = 'tok_test'});
+  FakeGist({this.token = 'tok_test', this.login = 'tester', this.scopes = 'gist, repo'});
 
   final String token;
+  final String login;
+  final String scopes;
   String? id;
   final Map<String, String> files = {};
   int revision = 0;
@@ -47,6 +49,18 @@ class FakeGist {
         }
         final path = request.url.path;
         final method = request.method;
+
+        // Token verification used by `connect`.
+        if (path == '/user' && method == 'GET') {
+          return http.Response(
+            '{"login":"$login"}',
+            200,
+            headers: {
+              'content-type': 'application/json',
+              'x-oauth-scopes': scopes,
+            },
+          );
+        }
 
         if (path == '/gists' && method == 'POST') {
           id ??= 'gist_test_1';
@@ -387,8 +401,7 @@ void main() {
       expect(engine.isConfigured, isFalse);
     });
 
-    test('schedules an automatic retry when rate limited', () async {
-      final limited = SyncEngine(
+    test('schedules an automatic retry when rate limited', () async {      final limited = SyncEngine(
         database: a.db,
         ledger: a.ledger,
         config: a.config,
@@ -422,6 +435,63 @@ void main() {
         isTrue,
         reason: 'retry is scheduled in the future',
       );
+    });
+
+    test('explains an empty token instead of sending one', () async {
+      final engine = a.syncEngine(gist);
+      final outcome = await engine.connect(token: '   ');
+
+      expect(outcome.state, SyncState.error);
+      expect(outcome.message, contains('Paste a GitHub token'));
+      expect(gist.requestCount, 0, reason: 'no request should be made');
+    });
+
+    test('strips paste noise from the token before sending', () async {
+      final engine = a.syncEngine(gist);
+      // A trailing newline and a non-breaking space travel with far too many
+      // copy-pastes; both used to produce 401 Bad credentials.
+      final outcome = await engine.connect(token: '${gist.token}\n\u00A0 ');
+
+      expect(outcome.ok, isTrue);
+      expect(a.config.accountLogin, 'tester');
+    });
+
+    test('reports an invalid token as such', () async {
+      final engine = SyncEngine(
+        database: a.db,
+        ledger: a.ledger,
+        config: a.config,
+        deviceId: 'device_a',
+        clientFactory: (token) => GistClient(
+          token: token,
+          client: MockClient(
+            (_) async => http.Response('{"message":"Bad credentials"}', 401),
+          ),
+        ),
+      );
+
+      final outcome = await engine.connect(token: 'ghp_stillnotvalid000000000000');
+
+      expect(outcome.state, SyncState.error);
+      expect(outcome.message, contains('invalid or'));
+    });
+
+    test('reports a token that is valid but lacks the gist scope', () async {
+      final scopeless = FakeGist(scopes: 'repo, read:org');
+      final engine = SyncEngine(
+        database: a.db,
+        ledger: a.ledger,
+        config: a.config,
+        deviceId: 'device_a',
+        clientFactory: (token) =>
+            GistClient(token: token, client: scopeless.client()),
+      );
+
+      final outcome = await engine.connect(token: scopeless.token);
+
+      expect(outcome.state, SyncState.error);
+      expect(outcome.message, contains('gist'));
+      expect(a.config.gistId, isNull);
     });
   });
 }

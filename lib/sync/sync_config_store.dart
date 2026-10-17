@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../data/app_database.dart';
 import 'secret_codec.dart';
+import 'token.dart';
 
 /// Persisted sync settings: vault location, credentials and last-run state.
 ///
@@ -15,17 +16,29 @@ class SyncConfigStore {
   static const String _kGistId = 'gist.id';
   static const String _kEtag = 'gist.etag';
   static const String _kDevices = 'gist.devices';
+  static const String _kAccount = 'gist.account';
   static const String _kLastSyncAt = 'sync.last_at';
   static const String _kLastMessage = 'sync.last_message';
 
   String? get _rawToken => _db.getSyncState(_kToken);
 
-  String? get token => SecretCodec.decode(_rawToken);
+  /// The stored token, with any pasted whitespace/Unicode noise stripped.
+  String? get token {
+    final decoded = SecretCodec.decode(_rawToken);
+    if (decoded == null) return null;
+    final clean = sanitizeToken(decoded);
+    return clean.isEmpty ? null : clean;
+  }
 
   set token(String? value) => _db.setSyncState(
         _kToken,
-        value == null ? null : SecretCodec.encode(value),
+        value == null ? null : SecretCodec.encode(sanitizeToken(value)),
       );
+
+  /// GitHub login the vault was last verified against (for the UI).
+  String? get accountLogin => _db.getSyncState(_kAccount);
+
+  set accountLogin(String? value) => _db.setSyncState(_kAccount, value);
 
   /// True when the stored token is encrypted with DPAPI.
   bool get tokenEncrypted => SecretCodec.isEncrypted(_rawToken);
@@ -84,5 +97,6 @@ class SyncConfigStore {
     gistId = null;
     etag = null;
     lastMessage = null;
+    accountLogin = null;
   }
 }
