@@ -17,7 +17,7 @@ void main() {
     expect(find.text('ACCOUNT • DEFAULT PORTFOLIO'), findsOneWidget);
     expect(find.text('NO OPEN POSITIONS'), findsOneWidget);
 
-    await tester.tap(find.text('DEPOSIT CASH'));
+    await tester.tap(find.text('DEPOSIT'));
     await tester.pump();
 
     // Cash now shows in both Net Liquidation Value and Buying Power.

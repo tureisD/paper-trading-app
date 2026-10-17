@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../data/app_database.dart';
 import '../../data/ledger_repository.dart';
 import '../../data/settings_store.dart';
+import '../../design/layout.dart';
 import '../../design/theme_controller.dart';
 import '../../design/tokens.dart';
 import '../../analytics/equity_snapshot_repository.dart';
@@ -168,60 +169,65 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
+    final compact = Breakpoints.isCompact(context);
     return Scaffold(
-      body: Focus(
-        autofocus: true,
-        onKeyEvent: _onKey,
-        child: Column(
-          children: [
-            _TopBar(
-              journalMode: widget.database.journalMode,
-              schemaVersion: widget.database.schemaVersion,
-              accountName: widget.accountName,
-              pendingSync: widget.ledger.pendingCount(),
-              syncOutcome: _syncOutcome,
-              onSyncTap: _openSyncDialog,
-            ),
-            Expanded(
-              child: IndexedStack(
-                index: _tab,
-                children: [
-                  PortfolioTab(
-                    databasePath: widget.databasePath,
-                    ledger: widget.ledger,
-                    instruments: widget.instruments,
-                    quotes: widget.quotes,
-                    marketData: widget.marketData,
-                    engine: widget.engine,
-                    snapshots: widget.snapshots,
-                    syncEngine: widget.syncEngine,
-                    liveQuotes: _liveQuotes,
-                    syncOutcome: _syncOutcome,
-                    pendingSync: widget.ledger.pendingCount(),
-                    onOpenSync: _openSyncDialog,
-                    onSyncNow: _syncNow,
-                    onDeposit: _deposit,
-                    settings: widget.settings,
-                    theme: widget.theme,
-                    accounts: widget.accounts,
-                    accountId: widget.accountId,
-                    accountName: widget.accountName,
-                    onAccountChanged: widget.onAccountChanged,
-                  ),
-                  DiscoveryTab(
-                    key: _discoveryKey,
-                    instruments: widget.instruments,
-                    quotes: widget.quotes,
-                    marketData: widget.marketData,
-                    engine: widget.engine,
-                    liveQuotes: _liveQuotes,
-                    onTraded: () => setState(() {}),
-                  ),
-                ],
+      // Keep clear of the status bar and the gesture/navigation bar.
+      body: SafeArea(
+        child: Focus(
+          autofocus: true,
+          onKeyEvent: _onKey,
+          child: Column(
+            children: [
+              _TopBar(
+                journalMode: widget.database.journalMode,
+                schemaVersion: widget.database.schemaVersion,
+                accountName: widget.accountName,
+                pendingSync: widget.ledger.pendingCount(),
+                syncOutcome: _syncOutcome,
+                onSyncTap: _openSyncDialog,
+                compact: compact,
               ),
-            ),
-            _SegmentBar(index: _tab, onChanged: _selectTab),
-          ],
+              Expanded(
+                child: IndexedStack(
+                  index: _tab,
+                  children: [
+                    PortfolioTab(
+                      databasePath: widget.databasePath,
+                      ledger: widget.ledger,
+                      instruments: widget.instruments,
+                      quotes: widget.quotes,
+                      marketData: widget.marketData,
+                      engine: widget.engine,
+                      snapshots: widget.snapshots,
+                      syncEngine: widget.syncEngine,
+                      liveQuotes: _liveQuotes,
+                      syncOutcome: _syncOutcome,
+                      pendingSync: widget.ledger.pendingCount(),
+                      onOpenSync: _openSyncDialog,
+                      onSyncNow: _syncNow,
+                      onDeposit: _deposit,
+                      settings: widget.settings,
+                      theme: widget.theme,
+                      accounts: widget.accounts,
+                      accountId: widget.accountId,
+                      accountName: widget.accountName,
+                      onAccountChanged: widget.onAccountChanged,
+                    ),
+                    DiscoveryTab(
+                      key: _discoveryKey,
+                      instruments: widget.instruments,
+                      quotes: widget.quotes,
+                      marketData: widget.marketData,
+                      engine: widget.engine,
+                      liveQuotes: _liveQuotes,
+                      onTraded: () => setState(() {}),
+                    ),
+                  ],
+                ),
+              ),
+              _SegmentBar(index: _tab, onChanged: _selectTab),
+            ],
+          ),
         ),
       ),
     );
@@ -240,6 +246,7 @@ class _TopBar extends StatelessWidget {
     required this.pendingSync,
     required this.syncOutcome,
     required this.onSyncTap,
+    required this.compact,
   });
 
   final String journalMode;
@@ -248,14 +255,16 @@ class _TopBar extends StatelessWidget {
   final int pendingSync;
   final SyncOutcome? syncOutcome;
   final VoidCallback onSyncTap;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final onSurface = Theme.of(context).colorScheme.onSurface;
     final hairline = Theme.of(context).dividerColor;
+    final wide = MediaQuery.sizeOf(context).width >= 900;
 
     return Container(
-      height: 38,
+      height: compact ? 44 : 38,
       decoration: BoxDecoration(
         color: AppColors.panelDark,
         border: Border(
@@ -276,17 +285,18 @@ class _TopBar extends StatelessWidget {
               letterSpacing: 1.4,
             ),
           ),
-          Text(
-            'BANKING',
-            style: AppTypography.mono(
-              size: 13,
-              weight: FontWeight.w400,
-              color: AppColors.neutral,
-              letterSpacing: 1.4,
+          if (!compact)
+            Text(
+              'BANKING',
+              style: AppTypography.mono(
+                size: 13,
+                weight: FontWeight.w400,
+                color: AppColors.neutral,
+                letterSpacing: 1.4,
+              ),
             ),
-          ),
-          const SizedBox(width: AppSpacing.md),
-          if (MediaQuery.sizeOf(context).width >= 900) ...[
+          if (wide) ...[
+            const SizedBox(width: AppSpacing.md),
             Container(width: AppBorders.hairline, height: 16, color: hairline),
             const SizedBox(width: AppSpacing.md),
             Text(
@@ -297,9 +307,8 @@ class _TopBar extends StatelessWidget {
                 letterSpacing: 0.4,
               ),
             ),
-            const SizedBox(width: AppSpacing.md),
-          ] else
-            const SizedBox(width: AppSpacing.sm),
+          ],
+          SizedBox(width: compact ? AppSpacing.sm : AppSpacing.md),
           Flexible(
             child: Container(
               padding: const EdgeInsets.symmetric(
@@ -316,15 +325,17 @@ class _TopBar extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    'PORTFOLIO',
-                    style: AppTypography.mono(
-                      size: 9,
-                      color: AppColors.textMutedDark,
-                      letterSpacing: 0.4,
+                  if (!compact) ...[
+                    Text(
+                      'PORTFOLIO',
+                      style: AppTypography.mono(
+                        size: 9,
+                        color: AppColors.textMutedDark,
+                        letterSpacing: 0.4,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: AppSpacing.xs),
+                    const SizedBox(width: AppSpacing.xs),
+                  ],
                   Flexible(
                     child: Text(
                       accountName,
@@ -341,7 +352,7 @@ class _TopBar extends StatelessWidget {
               ),
             ),
           ),
-          if (MediaQuery.sizeOf(context).width >= 900) ...[
+          if (wide) ...[
             const SizedBox(width: AppSpacing.lg),
             Text(
               'Ctrl+1/2  •  /  •  Ctrl+R',
@@ -356,6 +367,7 @@ class _TopBar extends StatelessWidget {
             pending: pendingSync,
             outcome: syncOutcome,
             onTap: onSyncTap,
+            compact: compact,
           ),
         ],
       ),
@@ -403,11 +415,13 @@ class _StatusPill extends StatelessWidget {
     required this.pending,
     required this.outcome,
     required this.onTap,
+    required this.compact,
   });
 
   final int pending;
   final SyncOutcome? outcome;
   final VoidCallback onTap;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -417,20 +431,20 @@ class _StatusPill extends StatelessWidget {
 
     switch (state) {
       case SyncState.synced:
-        label = outcome!.label;
+        label = compact ? 'SYNCED' : outcome!.label;
         colour = AppColors.positive;
       case SyncState.syncing:
         label = 'SYNCING…';
         colour = AppColors.focus;
       case SyncState.error:
-        label = 'SYNC ERROR • QUEUED ($pending)';
+        label = compact ? 'ERROR ($pending)' : 'SYNC ERROR • QUEUED ($pending)';
         colour = AppColors.negative;
       case SyncState.offline:
-        label = 'OFFLINE • QUEUED ($pending)';
+        label = compact ? 'OFFLINE ($pending)' : 'OFFLINE • QUEUED ($pending)';
         colour = AppColors.warning;
       case SyncState.notConfigured:
       case null:
-        label = 'LOCAL • QUEUED ($pending)';
+        label = compact ? 'LOCAL ($pending)' : 'LOCAL • QUEUED ($pending)';
         colour = AppColors.warning;
     }
 
@@ -438,8 +452,9 @@ class _StatusPill extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.sm,
+        constraints: const BoxConstraints(minHeight: 32),
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? AppSpacing.sm : AppSpacing.sm,
           vertical: AppSpacing.xs,
         ),
         decoration: BoxDecoration(
@@ -487,7 +502,7 @@ class _SegmentBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final hairline = Theme.of(context).dividerColor;
     return Container(
-      height: 46,
+      height: 56,
       decoration: BoxDecoration(
         color: AppColors.panelDark,
         border: Border(
@@ -564,7 +579,7 @@ class _Segment extends StatelessWidget {
               Text(
                 title,
                 style: AppTypography.ui(
-                  size: 12,
+                  size: 13,
                   weight: FontWeight.w600,
                   letterSpacing: 0.8,
                   color: selected
@@ -572,14 +587,16 @@ class _Segment extends StatelessWidget {
                       : AppColors.textMutedDark,
                 ),
               ),
-              const SizedBox(width: AppSpacing.sm),
-              Text(
-                hint,
-                style: AppTypography.mono(
-                  size: 10,
-                  color: AppColors.textMutedDark,
+              if (MediaQuery.sizeOf(context).width >= 700) ...[
+                const SizedBox(width: AppSpacing.sm),
+                Text(
+                  hint,
+                  style: AppTypography.mono(
+                    size: 10,
+                    color: AppColors.textMutedDark,
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
         ),

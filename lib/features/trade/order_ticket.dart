@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/format.dart';
+import '../../design/layout.dart';
 import '../../design/tokens.dart';
 import '../../market/asset_class.dart';
 import '../../market/market_data_service.dart';
@@ -35,20 +36,16 @@ Future<TradeResult?> showOrderTicket(
   return showDialog<TradeResult>(
     context: context,
     barrierColor: const Color(0xCC000000),
-    builder: (dialogContext) => Dialog(
-      backgroundColor: Colors.transparent,
-      elevation: 0,
-      child: SizedBox(
-        width: 460,
-        child: OrderTicket(
-          engine: engine,
-          marketData: marketData,
-          quotes: quotes,
-          instrument: instrument,
-          initialSide: initialSide,
-          initialQuantity: initialQuantity,
-          onClose: () => Navigator.of(dialogContext).pop(),
-        ),
+    builder: (dialogContext) => AppDialog(
+      maxWidth: 460,
+      child: OrderTicket(
+        engine: engine,
+        marketData: marketData,
+        quotes: quotes,
+        instrument: instrument,
+        initialSide: initialSide,
+        initialQuantity: initialQuantity,
+        onClose: () => Navigator.of(dialogContext).pop(),
       ),
     ),
   );

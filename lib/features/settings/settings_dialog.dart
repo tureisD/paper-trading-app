@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/format.dart';
 import '../../data/ledger_repository.dart';
 import '../../data/settings_store.dart';
+import '../../design/layout.dart';
 import '../../design/theme_controller.dart';
 import '../../design/tokens.dart';
 import '../../trading/account_repository.dart';
@@ -22,15 +23,18 @@ Future<void> showSettingsDialog(
   return showDialog<void>(
     context: context,
     barrierColor: const Color(0xCC000000),
-    builder: (_) => _SettingsDialog(
-      settings: settings,
-      theme: theme,
-      ledger: ledger,
-      accounts: accounts,
-      accountId: accountId,
-      accountName: accountName,
-      onAccountChanged: onAccountChanged,
-      onChanged: onChanged,
+    builder: (_) => AppDialog(
+      maxWidth: 560,
+      child: _SettingsDialog(
+        settings: settings,
+        theme: theme,
+        ledger: ledger,
+        accounts: accounts,
+        accountId: accountId,
+        accountName: accountName,
+        onAccountChanged: onAccountChanged,
+        onChanged: onChanged,
+      ),
     ),
   );
 }

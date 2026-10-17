@@ -44,9 +44,16 @@ void main() {
     (tester) async {
       await _loadBrandFonts();
 
+      final sizeEnv = Platform.environment['RENDER_SIZE'];
+      final size = sizeEnv == null
+          ? const Size(1280, 720)
+          : Size(
+              double.parse(sizeEnv.split('x').first),
+              double.parse(sizeEnv.split('x').last),
+            );
       tester.view.devicePixelRatio = 1.0;
-      await tester.binding.setSurfaceSize(const Size(1280, 720));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
+      tester.view.physicalSize = size;
+      addTearDown(tester.view.reset);
 
       final db = AppDatabase.inMemory();
       addTearDown(db.close);

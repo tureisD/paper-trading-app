@@ -10,11 +10,13 @@ portfolio syncs between your devices for free through a GitHub Gist.
 No backend. No sign-up. No subscription. Your data stays yours.
 
 <p align="center">
-  <img src="docs/screenshot-portfolio-dark.png" width="49%" alt="Portfolio tab in the dark theme" />
+  <img src="docs/screenshot-portfolio-dark.png" width="49%" alt="Portfolio tab on desktop (dark)" />
   <img src="docs/screenshot-discovery.png" width="49%" alt="Discovery tab: search, chart and order ticket" />
 </p>
 <p align="center">
-  <img src="docs/screenshot-portfolio-light.png" width="70%" alt="Portfolio tab in the light theme" />
+  <img src="docs/screenshot-android-portfolio.png" width="24%" alt="Portfolio on Android" />
+  <img src="docs/screenshot-android-ticket.png" width="24%" alt="Order ticket on Android" />
+  <img src="docs/screenshot-portfolio-light.png" width="49%" alt="Portfolio tab in the light theme" />
 </p>
 
 ---
@@ -54,6 +56,11 @@ market data.
   `QUEUED_NAV` settlement on funds, and clean-price quotes settled at dirty
   price with automatic coupon crediting on bonds.
 - **Two themes**, keyboard-first on desktop, thumb-first on mobile.
+- **Responsive by design** — one codebase, two real presentations. Phones get a
+  compact top bar, stacked account metrics, holding *cards* with full-width trade
+  buttons and modal sheets; desktop gets the dense 10-column table and split
+  panes. Everything sits inside safe areas, clear of the status bar and the
+  gesture/navigation bar.
 - **Both platforms build today** — portable Windows `.exe`, Android `.apk`/`.aab`.
 
 ---

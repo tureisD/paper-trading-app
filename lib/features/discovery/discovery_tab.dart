@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/format.dart';
+import '../../design/layout.dart';
 import '../../design/tokens.dart';
 import '../../market/asset_class.dart';
 import '../../market/instrument_repository.dart';
@@ -202,14 +203,17 @@ class DiscoveryTabState extends State<DiscoveryTab> {
 
   @override
   Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width >= 900;
+    final wide = Breakpoints.isWide(context);
     if (!wide) return _list();
 
     final hairline = Theme.of(context).dividerColor;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SizedBox(width: 470, child: _list()),
+        SizedBox(
+          width: Breakpoints.isCompact(context) ? 380 : 470,
+          child: _list(),
+        ),
         Container(width: AppBorders.hairline, color: hairline),
         Expanded(child: _detail()),
       ],
@@ -221,14 +225,17 @@ class DiscoveryTabState extends State<DiscoveryTab> {
   // -------------------------------------------------------------------------
 
   Widget _list() {
+    final compact = Breakpoints.isCompact(context);
+    final horizontal = compact ? 12.0 : AppSpacing.lg;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(
+          padding: EdgeInsets.fromLTRB(
+            horizontal,
             AppSpacing.lg,
-            AppSpacing.lg,
-            AppSpacing.lg,
+            horizontal,
             AppSpacing.sm,
           ),
           child: _SearchField(
@@ -238,23 +245,25 @@ class DiscoveryTabState extends State<DiscoveryTab> {
           ),
         ),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+          padding: EdgeInsets.symmetric(horizontal: horizontal),
           child: _FilterPills(selected: _filter, onChanged: _setFilter),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.lg,
+          padding: EdgeInsets.fromLTRB(
+            horizontal,
             AppSpacing.md,
-            AppSpacing.lg,
+            horizontal,
             AppSpacing.sm,
           ),
-          child: Row(
+          child: Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Text(
                 '${_results.length} RESULTS',
                 style: AppTypography.label(AppColors.textMutedDark),
               ),
-              const Spacer(),
               if (_refreshing)
                 Text(
                   'FETCHING…',
@@ -264,12 +273,10 @@ class DiscoveryTabState extends State<DiscoveryTab> {
                     letterSpacing: 0.6,
                   ),
                 ),
-              const SizedBox(width: AppSpacing.sm),
               GhostButton(
                 label: 'REFRESH',
                 onPressed: _refreshing ? () {} : refreshQuotes,
               ),
-              const SizedBox(width: AppSpacing.sm),
               GhostButton(
                 label: widget.liveQuotes.isStreaming ? 'LIVE ●' : 'GO LIVE',
                 accent: widget.liveQuotes.isStreaming
@@ -282,12 +289,7 @@ class DiscoveryTabState extends State<DiscoveryTab> {
         ),
         if (widget.liveQuotes.isStreaming)
           Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.lg,
-              0,
-              AppSpacing.lg,
-              AppSpacing.sm,
-            ),
+            padding: EdgeInsets.fromLTRB(horizontal, 0, horizontal, AppSpacing.sm),
             child: Text(
               '${widget.liveQuotes.status.toUpperCase()} • '
               '${widget.liveQuotes.receivedTicks} TICKS • '
@@ -324,6 +326,7 @@ class DiscoveryTabState extends State<DiscoveryTab> {
                       instrument: instrument,
                       quote: _quotes[instrument.symbol],
                       selected: _selected?.symbol == instrument.symbol,
+                      compact: Breakpoints.isCompact(context),
                       onTap: () {
                         if (MediaQuery.sizeOf(context).width >= 900) {
                           _select(instrument);
@@ -878,31 +881,49 @@ class _InstrumentRow extends StatelessWidget {
     required this.instrument,
     this.quote,
     required this.selected,
+    this.compact = false,
     required this.onTap,
   });
 
   final Instrument instrument;
   final Quote? quote;
   final bool selected;
+  final bool compact;
   final VoidCallback onTap;
+
+  String get _priceText {
+    if (quote == null) return '—';
+    if (instrument.assetClass == AssetClass.bond) {
+      return '${quote!.price.toStringAsFixed(3)}%';
+    }
+    return formatMoney(quote!.price);
+  }
+
+  String get _changeText {
+    final percent = quote?.changePercent;
+    if (percent == null) return '';
+    return '${percent > 0 ? '+' : ''}${percent.toStringAsFixed(2)}%';
+  }
+
+  Color get _changeColour {
+    final percent = quote?.changePercent;
+    if (percent == null) return AppColors.neutral;
+    if (percent > 0) return AppColors.positive;
+    if (percent < 0) return AppColors.negative;
+    return AppColors.neutral;
+  }
 
   @override
   Widget build(BuildContext context) {
     final hairline = Theme.of(context).dividerColor;
-    final percent = quote?.changePercent;
-    final changeColor = percent == null
-        ? AppColors.neutral
-        : percent > 0
-            ? AppColors.positive
-            : percent < 0
-                ? AppColors.negative
-                : AppColors.neutral;
 
     return InkWell(
       onTap: onTap,
       child: Container(
-        height: 44,
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+        height: compact ? 56 : 44,
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 12 : AppSpacing.lg,
+        ),
         decoration: BoxDecoration(
           color: selected ? AppColors.raisedDark : Colors.transparent,
           border: Border(
@@ -913,82 +934,148 @@ class _InstrumentRow extends StatelessWidget {
             ),
           ),
         ),
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                border: Border.all(
-                  color: AppColors.hairlineDark,
-                  width: AppBorders.hairline,
-                ),
-                borderRadius: AppRadii.smAll,
-              ),
-              child: Text(
-                instrument.assetClass.wire,
-                style: AppTypography.mono(
-                  size: 9,
-                  weight: FontWeight.w600,
-                  color: AppColors.textMutedDark,
-                  letterSpacing: 0.4,
-                ),
-              ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            SizedBox(
-              width: 96,
-              child: Text(
-                instrument.symbol,
-                style: AppTypography.mono(
-                  size: 12,
-                  weight: FontWeight.w600,
-                  color: AppColors.textPrimaryDark,
-                ),
-              ),
-            ),
-            Expanded(
-              child: Text(
-                instrument.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppTypography.ui(
-                  size: 11,
-                  color: AppColors.textSecondaryDark,
-                ),
-              ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            SizedBox(
-              width: 84,
-              child: Text(
-                quote == null
-                    ? '—'
-                    : instrument.assetClass == AssetClass.bond
-                        ? '${quote!.price.toStringAsFixed(3)}%'
-                        : formatMoney(quote!.price),
-                textAlign: TextAlign.right,
-                style: AppTypography.mono(
-                  size: 12,
-                  weight: FontWeight.w600,
-                  color: AppColors.textPrimaryDark,
-                ),
-              ),
-            ),
-            SizedBox(
-              width: 62,
-              child: Text(
-                percent == null
-                    ? ''
-                    : '${percent > 0 ? '+' : ''}${percent.toStringAsFixed(2)}%',
-                textAlign: TextAlign.right,
-                style: AppTypography.mono(size: 11, color: changeColor),
-              ),
-            ),
-          ],
-        ),
+        child: compact ? _compactRow() : _wideRow(),
       ),
+    );
+  }
+
+  Widget _badge() => Container(
+        width: compact ? 44 : 46,
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          border: Border.all(
+            color: AppColors.hairlineDark,
+            width: AppBorders.hairline,
+          ),
+          borderRadius: AppRadii.smAll,
+        ),
+        child: Text(
+          instrument.assetClass.wire,
+          style: AppTypography.mono(
+            size: 9,
+            weight: FontWeight.w600,
+            color: AppColors.textMutedDark,
+            letterSpacing: 0.4,
+          ),
+        ),
+      );
+
+  /// Phone layout: identity on the left, price stacked on the right.
+  Widget _compactRow() => Row(
+        children: [
+          _badge(),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  instrument.symbol,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.mono(
+                    size: 14,
+                    weight: FontWeight.w700,
+                    color: AppColors.textPrimaryDark,
+                  ),
+                ),
+                Text(
+                  instrument.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.ui(
+                    size: 11,
+                    color: AppColors.textSecondaryDark,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                _priceText,
+                style: AppTypography.mono(
+                  size: 14,
+                  weight: FontWeight.w600,
+                  color: AppColors.textPrimaryDark,
+                ),
+              ),
+              Text(
+                _changeText,
+                style: AppTypography.mono(size: 11, color: _changeColour),
+              ),
+            ],
+          ),
+        ],
+      );
+
+  Widget _wideRow() {
+    final changeColor = _changeColour;
+
+    return Row(
+      children: [
+        _badge(),
+        const SizedBox(width: AppSpacing.md),
+        SizedBox(
+          width: 110,
+          child: Text(
+            instrument.symbol,
+            style: AppTypography.mono(
+              size: 13,
+              weight: FontWeight.w600,
+              color: AppColors.textPrimaryDark,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            instrument.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.ui(
+              size: 12,
+              color: AppColors.textSecondaryDark,
+            ),
+          ),
+        ),
+        if (instrument.isin != null) ...[
+          const SizedBox(width: AppSpacing.md),
+          Text(
+            instrument.isin!,
+            style: AppTypography.mono(
+              size: 10,
+              color: AppColors.textMutedDark,
+            ),
+          ),
+        ],
+        const SizedBox(width: AppSpacing.lg),
+        SizedBox(
+          width: 96,
+          child: Text(
+            _priceText,
+            textAlign: TextAlign.right,
+            style: AppTypography.mono(
+              size: 13,
+              weight: FontWeight.w600,
+              color: AppColors.textPrimaryDark,
+            ),
+          ),
+        ),
+        SizedBox(
+          width: 72,
+          child: Text(
+            _changeText,
+            textAlign: TextAlign.right,
+            style: AppTypography.mono(size: 12, color: changeColor),
+          ),
+        ),
+      ],
     );
   }
 }

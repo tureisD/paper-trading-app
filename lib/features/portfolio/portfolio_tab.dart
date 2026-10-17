@@ -23,6 +23,7 @@ import '../../trading/account_repository.dart';
 import '../../trading/portfolio.dart';
 import '../../trading/portfolio_engine.dart';
 import '../../trading/trading_engine.dart';
+import '../../design/layout.dart';
 import '../../design/tokens.dart';
 import '../common/primitives.dart';
 import '../settings/settings_dialog.dart';
@@ -276,7 +277,7 @@ class _PortfolioTabState extends State<PortfolioTab> {
     );
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(AppSpacing.lg),
+      padding: PagePadding.of(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -298,71 +299,89 @@ class _PortfolioTabState extends State<PortfolioTab> {
   // Account summary
   // -------------------------------------------------------------------------
 
+  /// The account headline metrics, as a list so they can wrap on phones.
+  List<Widget> _statBlocks(PortfolioAnalytics analytics) => <Widget>[
+        StatBlock(
+          label: 'NET LIQUIDATION VALUE',
+          value: formatMoney(analytics.netLiquidation),
+          valueSize: 22,
+        ),
+        StatBlock(
+          label: 'DAY P&L',
+          value: formatMoney(analytics.dayPnl),
+          sub: _signedPercent(analytics.dayPnlPercent),
+          valueColor: _pnlColour(analytics.dayPnl),
+          subColor: _pnlColour(analytics.dayPnl),
+        ),
+        StatBlock(
+          label: 'TOTAL P&L',
+          value: formatMoney(analytics.totalPnl),
+          sub: _signedPercent(analytics.totalPnlPercent),
+          valueColor: _pnlColour(analytics.totalPnl),
+          subColor: _pnlColour(analytics.totalPnl),
+        ),
+        StatBlock(
+          label: 'BUYING POWER',
+          value: formatMoney(analytics.buyingPower),
+        ),
+        StatBlock(
+          label: 'ACCRUED INTEREST',
+          value: formatMoney(analytics.accruedInterestReceivable),
+        ),
+      ];
+
+  List<Widget> _actions() => <Widget>[
+        GhostButton(label: 'DEPOSIT', onPressed: widget.onDeposit),
+        GhostButton(
+          label: _marking ? 'MARKING…' : 'MARK',
+          onPressed: _marking ? () {} : _markToMarket,
+        ),
+        GhostButton(label: 'SETTINGS', onPressed: _openSettings),
+      ];
+
   Widget _summary(PortfolioAnalytics analytics) {
+    final compact = Breakpoints.isCompact(context);
+    final stats = _statBlocks(analytics);
+
     return Panel(
       title: 'ACCOUNT • ${widget.accountName.toUpperCase()}',
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          GhostButton(label: 'DEPOSIT CASH', onPressed: widget.onDeposit),
-          const SizedBox(width: AppSpacing.sm),
-          GhostButton(
-            label: _marking ? 'MARKING…' : 'MARK TO MARKET',
-            onPressed: _marking ? () {} : _markToMarket,
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          GhostButton(
-            label: 'SETTINGS',
-            onPressed: _openSettings,
-          ),
-        ],
-      ),
+      trailing: compact
+          ? null
+          : Row(mainAxisSize: MainAxisSize.min, children: _actions()),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                flex: 2,
-                child: StatBlock(
-                  label: 'NET LIQUIDATION VALUE',
-                  value: formatMoney(analytics.netLiquidation),
-                  valueSize: 26,
-                ),
-              ),
-              Expanded(
-                child: StatBlock(
-                  label: 'DAY P&L',
-                  value: formatMoney(analytics.dayPnl),
-                  sub: _signedPercent(analytics.dayPnlPercent),
-                  valueColor: _pnlColour(analytics.dayPnl),
-                  subColor: _pnlColour(analytics.dayPnl),
-                ),
-              ),
-              Expanded(
-                child: StatBlock(
-                  label: 'TOTAL P&L',
-                  value: formatMoney(analytics.totalPnl),
-                  sub: _signedPercent(analytics.totalPnlPercent),
-                  valueColor: _pnlColour(analytics.totalPnl),
-                  subColor: _pnlColour(analytics.totalPnl),
-                ),
-              ),
-              Expanded(
-                child: StatBlock(
-                  label: 'BUYING POWER',
-                  value: formatMoney(analytics.buyingPower),
-                ),
-              ),
-              Expanded(
-                child: StatBlock(
-                  label: 'ACCRUED INTEREST',
-                  value: formatMoney(analytics.accruedInterestReceivable),
-                ),
-              ),
-            ],
-          ),
+          if (compact) ...[
+            Wrap(
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
+              children: _actions(),
+            ),
+            const SizedBox(height: AppSpacing.md),
+          ],
+          if (compact)
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final columnWidth =
+                    (constraints.maxWidth - AppSpacing.md) / 2;
+                return Wrap(
+                  spacing: AppSpacing.md,
+                  runSpacing: AppSpacing.md,
+                  children: [
+                    for (final stat in stats)
+                      SizedBox(width: columnWidth, child: stat),
+                  ],
+                );
+              },
+            )
+          else
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(flex: 2, child: stats.first),
+                for (final stat in stats.skip(1)) Expanded(child: stat),
+              ],
+            ),
           if (_markError != null) ...[
             const SizedBox(height: AppSpacing.sm),
             Text(
@@ -410,25 +429,47 @@ class _PortfolioTabState extends State<PortfolioTab> {
       ),
       child: analytics.isEmpty
           ? const EmptyLine(text: 'NO HOLDINGS — BUY FROM THE DISCOVERY TAB')
-          : Column(
-              children: [
-                const _HoldingsHeader(),
-                for (final holding in analytics.holdings)
-                  _HoldingRow(
-                    holding: holding,
-                    onBuy: () => _quickTrade(holding, OrderSide.buy, 1),
-                    onSell: () => _quickTrade(
-                      holding,
-                      OrderSide.sell,
-                      _halfPosition(holding),
-                    ),
-                    onSellAll: () => _quickTrade(
-                      holding,
-                      OrderSide.sell,
-                      holding.quantity,
-                    ),
-                  ),
-              ],
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                // The table needs ~1010 px; below that, use cards.
+                final useTable = constraints.maxWidth >= 1010;
+                return Column(
+                  children: [
+                    if (useTable) const _HoldingsHeader(),
+                    for (final holding in analytics.holdings)
+                      if (useTable)
+                        _HoldingRow(
+                          holding: holding,
+                          onBuy: () => _quickTrade(holding, OrderSide.buy, 1),
+                          onSell: () => _quickTrade(
+                            holding,
+                            OrderSide.sell,
+                            _halfPosition(holding),
+                          ),
+                          onSellAll: () => _quickTrade(
+                            holding,
+                            OrderSide.sell,
+                            holding.quantity,
+                          ),
+                        )
+                      else
+                        _HoldingCard(
+                          holding: holding,
+                          onBuy: () => _quickTrade(holding, OrderSide.buy, 1),
+                          onSell: () => _quickTrade(
+                            holding,
+                            OrderSide.sell,
+                            _halfPosition(holding),
+                          ),
+                          onSellAll: () => _quickTrade(
+                            holding,
+                            OrderSide.sell,
+                            holding.quantity,
+                          ),
+                        ),
+                  ],
+                );
+              },
             ),
     );
   }
@@ -464,17 +505,20 @@ class _PortfolioTabState extends State<PortfolioTab> {
         children: [
           EquityChart(points: curve),
           const SizedBox(height: AppSpacing.lg),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          Wrap(
+            spacing: AppSpacing.xl,
+            runSpacing: AppSpacing.md,
             children: [
-              Expanded(
+              SizedBox(
+                width: 170,
                 child: StatBlock(
                   label: 'REALISED P&L',
                   value: formatMoney(stats.realisedTotal),
                   valueColor: _pnlColour(stats.realisedTotal),
                 ),
               ),
-              Expanded(
+              SizedBox(
+                width: 170,
                 child: StatBlock(
                   label: 'WIN / LOSS RATIO',
                   value: _winLoss(stats),
@@ -482,7 +526,8 @@ class _PortfolioTabState extends State<PortfolioTab> {
                       '${stats.winRate.toStringAsFixed(0)}% win rate',
                 ),
               ),
-              Expanded(
+              SizedBox(
+                width: 170,
                 child: StatBlock(
                   label: 'MAX DRAWDOWN',
                   value: _signedPercent(metrics.maxDrawdownFraction * 100),
@@ -492,7 +537,8 @@ class _PortfolioTabState extends State<PortfolioTab> {
                       : AppColors.textPrimaryDark,
                 ),
               ),
-              Expanded(
+              SizedBox(
+                width: 170,
                 child: StatBlock(
                   label: 'SHARPE RATIO',
                   value: metrics.hasSharpe
@@ -660,6 +706,150 @@ Color? _syncColour(SyncState? state) {
 // ---------------------------------------------------------------------------
 // Holdings table
 // ---------------------------------------------------------------------------
+
+class _HoldingCard extends StatelessWidget {
+  const _HoldingCard({
+    required this.holding,
+    required this.onBuy,
+    required this.onSell,
+    required this.onSellAll,
+  });
+
+  final HoldingView holding;
+  final VoidCallback onBuy;
+  final VoidCallback onSell;
+  final VoidCallback onSellAll;
+
+  @override
+  Widget build(BuildContext context) {
+    final hairline = Theme.of(context).dividerColor;
+    final pnlColour = holding.unrealisedPnl > 0
+        ? AppColors.positive
+        : holding.unrealisedPnl < 0
+            ? AppColors.negative
+            : AppColors.textSecondaryDark;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: hairline, width: AppBorders.hairline),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 46,
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: AppColors.hairlineDark,
+                    width: AppBorders.hairline,
+                  ),
+                  borderRadius: AppRadii.smAll,
+                ),
+                child: Text(
+                  holding.assetClass.wire,
+                  style: AppTypography.mono(
+                    size: 9,
+                    weight: FontWeight.w600,
+                    color: AppColors.textMutedDark,
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      holding.symbol,
+                      style: AppTypography.mono(
+                        size: 14,
+                        weight: FontWeight.w700,
+                        color: AppColors.textPrimaryDark,
+                      ),
+                    ),
+                    Text(
+                      holding.isin == '—' ? '—' : holding.isin,
+                      style: AppTypography.mono(
+                        size: 10,
+                        color: AppColors.textMutedDark,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    formatMoney(holding.marketValue),
+                    style: AppTypography.mono(
+                      size: 14,
+                      weight: FontWeight.w600,
+                      color: AppColors.textPrimaryDark,
+                    ),
+                  ),
+                  Text(
+                    '${holding.unrealisedPnl > 0 ? '+' : ''}'
+                    '${formatMoney(holding.unrealisedPnl)}  '
+                    '${holding.unrealisedPercent > 0 ? '+' : ''}'
+                    '${holding.unrealisedPercent.toStringAsFixed(2)}%',
+                    style: AppTypography.mono(size: 11, color: pnlColour),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            children: [
+              _cell(
+                'QTY',
+                holding.quantity.toStringAsFixed(
+                  holding.assetClass == AssetClass.crypto ? 8 : 4,
+                ),
+              ),
+              _cell('AVG COST', formatMoney(holding.averageCost)),
+              _cell(
+                'LAST',
+                holding.hasQuote ? formatMoney(holding.price) : '—',
+              ),
+              _cell('WEIGHT', '${holding.weightPercent.toStringAsFixed(1)}%'),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          _TradeActions(onBuy: onBuy, onSell: onSell, onSellAll: onSellAll),
+        ],
+      ),
+    );
+  }
+
+  Widget _cell(String label, String value) => Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: AppTypography.label(AppColors.textMutedDark)),
+            const SizedBox(height: AppSpacing.xxs),
+            Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.mono(
+                size: 12,
+                color: AppColors.textPrimaryDark,
+              ),
+            ),
+          ],
+        ),
+      );
+}
 
 class _HoldingsHeader extends StatelessWidget {
   const _HoldingsHeader();
@@ -837,11 +1027,18 @@ class _TradeActions extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        _action('BUY', AppColors.positive, onBuy),
+        Expanded(
+          child: _action('BUY', AppColors.positive, onBuy),
+        ),
         const SizedBox(width: AppSpacing.xs),
-        _action('SELL', AppColors.negative, onSell),
+        Expanded(
+          child: _action('SELL', AppColors.negative, onSell),
+        ),
         const SizedBox(width: AppSpacing.xs),
-        _action('ALL', AppColors.textSecondaryDark, onSellAll, tooltip: 'Sell all'),
+        Expanded(
+          child: _action('ALL', AppColors.textSecondaryDark, onSellAll,
+              tooltip: 'Sell the whole position'),
+        ),
       ],
     );
   }
@@ -856,7 +1053,8 @@ class _TradeActions extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        height: 34,
+        alignment: Alignment.center,
         decoration: BoxDecoration(
           border: Border.all(color: colour, width: AppBorders.hairline),
           borderRadius: AppRadii.smAll,
@@ -864,7 +1062,7 @@ class _TradeActions extends StatelessWidget {
         child: Text(
           label,
           style: AppTypography.mono(
-            size: 9,
+            size: 10,
             weight: FontWeight.w700,
             letterSpacing: 0.4,
             color: colour,
