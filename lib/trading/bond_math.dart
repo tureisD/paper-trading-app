@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import '../core/dates.dart' as dates;
+
 /// Fixed-income mathematics (roadmap section 4.3).
 class BondMath {
   const BondMath._();
@@ -147,16 +149,7 @@ class BondMath {
   ///
   /// Critical: `DateTime.parse('2030-01-15')` yields a *local* DateTime, which
   /// shifts the date by a day west of UTC. Coupon schedules must be UTC-stable.
-  static DateTime? parseDateUtc(String? value) {
-    if (value == null || value.isEmpty) return null;
-    final parts = value.split('T').first.split('-');
-    if (parts.length != 3) return DateTime.tryParse(value)?.toUtc();
-    final year = int.tryParse(parts[0]);
-    final month = int.tryParse(parts[1]);
-    final day = int.tryParse(parts[2]);
-    if (year == null || month == null || day == null) return null;
-    return DateTime.utc(year, month, day);
-  }
+  static DateTime? parseDateUtc(String? value) => dates.parseDateUtc(value);
 
   /// Coupon dates in the half-open range `(after, until]`, oldest first.
   static List<DateTime> couponDatesInRange({

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import '../data/app_database.dart';
@@ -77,6 +78,12 @@ class SyncEngine {
   SyncOutcome? _last;
   SyncOutcome? get lastOutcome => _last;
 
+  Timer? _retryTimer;
+  DateTime? _retryAt;
+
+  /// When the next automatic retry is due (after a rate limit), if scheduled.
+  DateTime? get nextRetryAt => _retryAt;
+
   bool get isConfigured => config.isConfigured;
 
   /// Creates or links the vault, then performs a first sync.
@@ -137,6 +144,7 @@ class SyncEngine {
         latency: stopwatch.elapsed,
       );
     } on RateLimitedException catch (e) {
+      _scheduleRetry(e.resetAt);
       return _record(SyncState.offline, message: e.toString());
     } on GistException catch (e) {
       return _record(SyncState.error, message: e.toString());
@@ -153,10 +161,15 @@ class SyncEngine {
     var merged = 0;
     for (final file in snapshot.files.values) {
       if (!ShardCodec.isShardFile(file.filename)) continue;
+      // Checkpoint: skip shards whose content we already merged.
+      final hash = _contentHash(file.content);
+      if (config.shardHash(file.filename) == hash) continue;
+
       for (final event in ShardCodec.decodeEvents(file.content)) {
         if (ledger.insertIfAbsent(event)) merged++;
         ledger.observeHlc(event.hlcTimestamp);
       }
+      config.setShardHash(file.filename, hash);
     }
     config.knownDevices = _devicesFrom(snapshot);
     if (merged > 0) onMerged?.call();
@@ -231,6 +244,41 @@ class SyncEngine {
       final dot = rest.indexOf('.');
       yield dot == -1 ? rest : rest.substring(0, dot);
     }
+  }
+
+  /// Schedules an automatic retry once the rate limit resets.
+  void _scheduleRetry(DateTime? resetAt) {
+    _retryTimer?.cancel();
+    var delay = resetAt == null
+        ? const Duration(minutes: 2)
+        : resetAt.difference(DateTime.now());
+    if (delay.isNegative) delay = const Duration(seconds: 30);
+    if (delay > const Duration(minutes: 30)) {
+      delay = const Duration(minutes: 30);
+    }
+    _retryAt = DateTime.now().add(delay);
+    _retryTimer = Timer(delay, () {
+      _retryTimer = null;
+      _retryAt = null;
+      syncNow();
+    });
+  }
+
+  /// Cancels any pending automatic retry.
+  void dispose() {
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    _retryAt = null;
+  }
+
+  /// FNV-1a over the shard text: cheap, stable, good enough for change checks.
+  static String _contentHash(String content) {
+    var hash = 0x811c9dc5;
+    for (final unit in content.codeUnits) {
+      hash = (hash ^ unit) & 0xFFFFFFFF;
+      hash = (hash * 0x01000193) & 0xFFFFFFFF;
+    }
+    return hash.toRadixString(16);
   }
 
   static String _monthKey(DateTime month) =>

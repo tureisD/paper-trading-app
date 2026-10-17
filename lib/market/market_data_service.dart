@@ -3,6 +3,7 @@ import 'models/instrument.dart';
 import 'models/quote.dart';
 import 'instrument_repository.dart';
 import 'providers/binance_provider.dart';
+import 'providers/ecb_provider.dart';
 import 'providers/fred_provider.dart';
 import 'providers/market_data_provider.dart';
 import 'providers/yahoo_provider.dart';
@@ -27,6 +28,7 @@ class MarketDataService {
         BinanceProvider(),
         YahooFinanceProvider(),
         FredProvider(),
+        EcbProvider(),
       ];
 
   Iterable<MarketDataProvider> get providers => _providers.values;

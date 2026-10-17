@@ -6,7 +6,7 @@ class Schema {
   const Schema._();
 
   /// Current schema version (== index of the last applied migration).
-  static const int version = 4;
+  static const int version = 5;
 
   /// Ordered migrations. `migrations[0]` takes the DB from v0 -> v1, etc.
   static const List<List<String>> migrations = <List<String>>[
@@ -14,6 +14,7 @@ class Schema {
     _v2,
     _v3,
     _v4,
+    _v5,
   ];
 
   /// v1 — append-only event ledger + FTS5 instrument index + sync bookkeeping.
@@ -154,5 +155,22 @@ class Schema {
   /// v4 — fund/ETF cost data for the asset detail sheet.
   static const List<String> _v4 = <String>[
     'ALTER TABLE instruments ADD COLUMN expense_ratio REAL;',
+  ];
+
+  /// v5 — daily equity snapshots (a true marked-to-market curve) and a free-form
+  /// metadata column on ledger events (order linkage, coupon dates).
+  static const List<String> _v5 = <String>[
+    '''
+    CREATE TABLE IF NOT EXISTS equity_snapshots (
+        day             TEXT PRIMARY KEY,
+        net_liquidation REAL NOT NULL,
+        cash            REAL NOT NULL,
+        market_value    REAL NOT NULL,
+        realised_pnl    REAL NOT NULL,
+        unrealised_pnl  REAL NOT NULL,
+        recorded_at     TEXT NOT NULL
+    );
+    ''',
+    'ALTER TABLE ledger_events ADD COLUMN meta TEXT;',
   ];
 }

@@ -20,7 +20,7 @@ for the full roadmap and architecture.
 | **4** | GitHub Gist cross-device sync | ✅ Done |
 | **5** | Tab 1 — Holdings, overview & P&L | ✅ Done |
 | **6** | Tab 2 — Search & order ticket | ✅ Done |
-| 7 | Profiling & native packaging | ⬜ Not started |
+| **7** | Profiling & native packaging | ✅ Done |
 
 ## Requirements
 
@@ -72,6 +72,7 @@ Keyless-first: no API keys are required for any provider shipped today.
 | Stocks, ETFs, Funds | `yahoo` | `query1.finance.yahoo.com/v8/finance/chart` |
 | Crypto | `binance` | `api.binance.com/api/v3` (+ `data-api.binance.vision` mirror) |
 | Bonds / yields | `fred` | `fred.stlouisfed.org/graph/fredgraph.csv` |
+| Euro-area yields | `ecb` | `data-api.ecb.europa.eu/service/data` (SDMX CSV) |
 
 - **Local search:** the instrument catalog lives in SQLite and is queried through
   the FTS5 index (sub-millisecond, fully offline).
@@ -81,7 +82,7 @@ Keyless-first: no API keys are required for any provider shipped today.
 - **Bulk refresh:** bounded concurrency (6 at a time), best-effort per symbol.
 - **Seeds:** `assets/data/instruments.json` (~76 instruments covering every
   asset class). The schema/FTS index are sized for 50k+; expand by appending.
-- **Not yet implemented:** ECB Data Portal provider, streaming WebSockets.
+- **Not yet implemented:** streaming for non-crypto classes (no free push feed).
 
 ## Trading engine (Phase 3)
 
@@ -196,6 +197,67 @@ modal instead.
 Schema v4 adds `instruments.expense_ratio`, and the catalog carries a version so
 existing installs refresh their instruments in place instead of re-seeding.
 
+## Live streaming & frame throttling (Phase 7)
+
+High-frequency crypto ticks are pushed over Binance's public WebSocket
+(`wss://stream.binance.com:9443`, mirror `data-stream.binance.vision`) and pass
+through a **coalescing batcher** before anything touches the UI:
+
+- Latest value per symbol wins inside each window; the batch is flushed once per
+  frame — `16.6 ms` (60 Hz) by default, `8.3 ms` (`QuoteBatcher.highRefreshInterval`)
+  for 120 Hz displays.
+- One batch means one `notifyListeners()`, one quote-cache write and one pass of
+  resting-order evaluation — never one per tick.
+- The Discovery tab shows live stream health: ticks received, frames emitted and
+  the coalescing percentage (a burst of 24 ticks into 12 frames reported
+  `coalesced=50%` in the live smoke test).
+- Only crypto streams; equities/ETFs/funds/bonds have no free push feed and stay
+  on polling. `/` search, `Ctrl+R` refresh, `Ctrl+1`/`Ctrl+2` tabs.
+
+```bash
+TB_LIVE=1 flutter test test/live_stream_smoke.dart
+```
+
+## Packaging (Phase 7)
+
+Both targets build today. Toolchains live outside the repo on a space-free path:
+
+| Tool | Location |
+| :--- | :--- |
+| Flutter 3.47.7 | `C:\Users\Public\flutter` |
+| Android SDK | `C:\Users\Public\android-sdk` (platforms 35/36, build-tools 35/36, NDK r28c) |
+| JDK 17 (Temurin) | `C:\Users\Public\jdk17` |
+
+```bash
+flutter build windows --release          # portable desktop build
+flutter build apk     --release          # 42 MB universal APK
+flutter build appbundle --release --obfuscate --split-debug-info=build/app/outputs/symbols
+```
+
+- **Windows:** `build/windows/x64/runner/Release/` is a self-contained folder
+  (`TureisBanking.exe` + `flutter_windows.dll` + `data/` + `sqlite3.dll`); zipped
+  to ~13 MB as the portable package.
+- **Android:** R8 shrinks the Java/Kotlin side (Flutter default for release) and
+  the Dart AOT snapshot is obfuscated with `--obfuscate`. Release APKs here are
+  signed with the debug key — a real keystore is needed before distribution.
+- **MSIX** is not produced: it needs a signing certificate, so the portable
+  folder/zip is the Windows distribution path.
+
+## Deliberately not done
+
+These are open by choice, not oversight:
+
+- **50k-ticker dataset** — the FTS5 index and schema scale to it, but the seed
+  catalog is a curated ~80 instruments; a full dataset needs a licensed source.
+- **Keyed providers** (Finnhub / Alpaca / Polygon / Twelve Data) — the provider
+  interface accepts them as drop-in additions, but no API keys were supplied.
+- **Resting-order sync between devices** — pending orders are still device-local.
+  Making them travel means recording `ORDER_PLACED` / `ORDER_CANCELLED` /
+  `ORDER_FILLED` as ledger events (the `ledger_events.meta` column added in
+  schema v5 is the hook) and deriving the working book by replay. That needs a
+  decision on cross-device semantics — who may cancel, and what a partial fill on
+  one device means on the other — so it is left for your call.
+
 ## Design review screenshots
 
 Renders the app offscreen (no window, no network, deterministic fake provider)
@@ -210,10 +272,11 @@ Not part of the normal `flutter test` run.
 
 ## Notes & caveats
 
-- **Developer Mode:** Flutter requires Windows Developer Mode to build with any
-  native *plugin* (symlinks). This build intentionally uses **zero plugins**, so
-  it compiles today. Enabling Developer Mode is required before Android work
-  (and before re-introducing `path_provider` for Android data paths).
+- **Developer Mode:** Flutter needs Windows Developer Mode to build with a native
+  *plugin* (symlinks). This project deliberately uses **zero plugins**, so both
+  the Windows and Android release builds succeed without it. Introducing a
+  plugin (e.g. `path_provider` for Android data paths, or a secure-storage
+  package) will require enabling Developer Mode first.
 - `sqlite3_flutter_libs` is **not** used: `package:sqlite3` 3.x bundles SQLite
   via build hooks (the resulting `sqlite3.dll` ships next to the `.exe`).
 - `path_provider` is intentionally omitted on Windows; data paths are resolved

@@ -24,8 +24,8 @@ class LedgerRepository {
   static const String _insertSql = '''
     INSERT INTO ledger_events (
       event_id, hlc_timestamp, device_id, event_type, symbol, asset_class,
-      quantity, execution_price, accrued_interest, fee, currency, synced
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+      quantity, execution_price, accrued_interest, fee, currency, synced, meta
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
   ''';
 
   static HlcClock _initClock(AppDatabase db) {
@@ -45,6 +45,7 @@ class LedgerRepository {
     double accruedInterest = 0.0,
     double fee = 0.0,
     String currency = 'USD',
+    String? meta,
     DateTime? at,
   }) {
     final now = at ?? DateTime.now();
@@ -60,6 +61,7 @@ class LedgerRepository {
       accruedInterest: accruedInterest,
       fee: fee,
       currency: currency,
+      meta: meta,
     );
   }
 

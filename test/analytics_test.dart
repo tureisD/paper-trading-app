@@ -1,7 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:paper_trading_app/analytics/equity_curve.dart';
+import 'package:paper_trading_app/analytics/equity_snapshot_repository.dart';
 import 'package:paper_trading_app/analytics/portfolio_analytics.dart';
 import 'package:paper_trading_app/analytics/trade_stats.dart';
+import 'package:paper_trading_app/data/app_database.dart';
 import 'package:paper_trading_app/data/models/ledger_event.dart';
 import 'package:paper_trading_app/market/asset_class.dart';
 import 'package:paper_trading_app/market/models/instrument.dart';
@@ -284,6 +286,70 @@ void main() {
 
     test('is empty for a portfolio that has never sold', () {
       expect(TradeStats.fromRealisations(const []), TradeStats.empty);
+    });
+  });
+
+  group('Equity snapshots', () {
+    test('records one row per UTC day and upserts the same day', () {
+      final db = AppDatabase.inMemory();
+      addTearDown(db.close);
+      final repository = EquitySnapshotRepository(db);
+
+      repository.record(
+        at: DateTime.utc(2026, 1, 1, 9),
+        netLiquidation: 100,
+        cash: 100,
+        marketValue: 0,
+        realisedPnl: 0,
+        unrealisedPnl: 0,
+      );
+      repository.record(
+        at: DateTime.utc(2026, 1, 1, 17),
+        netLiquidation: 110,
+        cash: 110,
+        marketValue: 0,
+        realisedPnl: 0,
+        unrealisedPnl: 0,
+      );
+      repository.record(
+        at: DateTime.utc(2026, 1, 2, 9),
+        netLiquidation: 120,
+        cash: 120,
+        marketValue: 0,
+        realisedPnl: 0,
+        unrealisedPnl: 0,
+      );
+
+      expect(repository.count(), 2);
+      final all = repository.all();
+      expect(all.first.netLiquidation, 110, reason: 'same-day upsert');
+      expect(all.last.netLiquidation, 120);
+    });
+
+    test('builds a chronological curve from snapshots', () {
+      final points = EquityCurve.fromSnapshots([
+        EquitySnapshot(
+          day: '2026-01-02',
+          netLiquidation: 120,
+          cash: 0,
+          marketValue: 0,
+          realisedPnl: 0,
+          unrealisedPnl: 0,
+          recordedAt: DateTime.utc(2026, 1, 2),
+        ),
+        EquitySnapshot(
+          day: '2026-01-01',
+          netLiquidation: 100,
+          cash: 0,
+          marketValue: 0,
+          realisedPnl: 0,
+          unrealisedPnl: 0,
+          recordedAt: DateTime.utc(2026, 1, 1),
+        ),
+      ]);
+
+      expect(points.map((p) => p.equity).toList(), [100, 120]);
+      expect(points.first.time, DateTime.parse('2026-01-01T00:00:00.000Z'));
     });
   });
 }

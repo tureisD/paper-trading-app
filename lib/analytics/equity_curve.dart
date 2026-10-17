@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import '../data/models/ledger_event.dart';
 import '../sync/hlc.dart';
+import 'equity_snapshot_repository.dart';
 
 /// One point on the equity curve.
 class EquityPoint {
@@ -83,6 +84,19 @@ class EquityCurve {
     }
     // Always append a "now" point so live marks show up on the curve.
     points.add(EquityPoint(stamp, _equity(cash, quantities, live)));
+    return points;
+  }
+
+  /// Builds a curve from recorded daily marked-to-market snapshots. Preferred
+  /// over [fromLedger] whenever at least two days have been recorded.
+  static List<EquityPoint> fromSnapshots(Iterable<EquitySnapshot> snapshots) {
+    final points = snapshots
+        .map((snapshot) => EquityPoint(
+              DateTime.parse('${snapshot.day}T00:00:00.000Z'),
+              snapshot.netLiquidation,
+            ))
+        .toList()
+      ..sort((a, b) => a.time.compareTo(b.time));
     return points;
   }
 

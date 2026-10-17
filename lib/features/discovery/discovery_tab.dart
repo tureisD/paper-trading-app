@@ -4,6 +4,7 @@ import '../../core/format.dart';
 import '../../design/tokens.dart';
 import '../../market/asset_class.dart';
 import '../../market/instrument_repository.dart';
+import '../../market/live_quotes.dart';
 import '../../market/market_data_service.dart';
 import '../../market/models/candle.dart';
 import '../../market/models/instrument.dart';
@@ -25,6 +26,7 @@ class DiscoveryTab extends StatefulWidget {
     required this.quotes,
     required this.marketData,
     required this.engine,
+    required this.liveQuotes,
     required this.onTraded,
   });
 
@@ -32,6 +34,7 @@ class DiscoveryTab extends StatefulWidget {
   final QuoteRepository quotes;
   final MarketDataService marketData;
   final TradingEngine engine;
+  final LiveQuoteService liveQuotes;
   final VoidCallback onTraded;
 
   @override
@@ -70,14 +73,42 @@ class DiscoveryTabState extends State<DiscoveryTab> {
   @override
   void initState() {
     super.initState();
+    widget.liveQuotes.addListener(_onLiveQuotes);
     _runSearch();
   }
 
   @override
   void dispose() {
+    widget.liveQuotes.removeListener(_onLiveQuotes);
     _controller.dispose();
     _searchFocus.dispose();
     super.dispose();
+  }
+
+  void _onLiveQuotes() {
+    if (!mounted) return;
+    // The service already coalesces to one update per frame.
+    setState(() {
+      _quotes = <String, Quote>{..._quotes, ...widget.liveQuotes.latest};
+    });
+  }
+
+  Future<void> _toggleLive() async {
+    if (widget.liveQuotes.isStreaming) {
+      await widget.liveQuotes.stop();
+      if (mounted) setState(() {});
+      return;
+    }
+    final targets = _results
+        .where((instrument) => instrument.assetClass == AssetClass.crypto)
+        .toList(growable: false);
+    if (targets.isEmpty) {
+      setState(() => _error = 'No crypto instruments in view to stream');
+      return;
+    }
+    setState(() => _error = null);
+    await widget.liveQuotes.start(targets);
+    if (mounted) setState(() {});
   }
 
   /// Bound to `/` from the shell.
@@ -235,9 +266,37 @@ class DiscoveryTabState extends State<DiscoveryTab> {
                 label: 'REFRESH',
                 onPressed: _refreshing ? () {} : refreshQuotes,
               ),
+              const SizedBox(width: AppSpacing.sm),
+              GhostButton(
+                label: widget.liveQuotes.isStreaming ? 'LIVE ●' : 'GO LIVE',
+                accent: widget.liveQuotes.isStreaming
+                    ? AppColors.positive
+                    : AppColors.textSecondaryDark,
+                onPressed: _toggleLive,
+              ),
             ],
           ),
         ),
+        if (widget.liveQuotes.isStreaming)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              0,
+              AppSpacing.lg,
+              AppSpacing.sm,
+            ),
+            child: Text(
+              '${widget.liveQuotes.status.toUpperCase()} • '
+              '${widget.liveQuotes.receivedTicks} TICKS • '
+              '${widget.liveQuotes.emittedBatches} FRAMES • '
+              'COALESCED ${(widget.liveQuotes.coalescedFraction * 100).toStringAsFixed(0)}%',
+              style: AppTypography.mono(
+                size: 9,
+                color: AppColors.positive,
+                letterSpacing: 0.4,
+              ),
+            ),
+          ),
         if (_error != null)
           Padding(
             padding: const EdgeInsets.fromLTRB(

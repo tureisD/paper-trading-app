@@ -1,17 +1,21 @@
 import 'package:flutter/material.dart';
 
 import '../../analytics/equity_curve.dart';
+import '../../analytics/equity_snapshot_repository.dart';
 import '../../analytics/portfolio_analytics.dart';
 import '../../analytics/trade_stats.dart';
 import '../../core/format.dart';
 import '../../data/ledger_repository.dart';
 import '../../market/asset_class.dart';
 import '../../market/instrument_repository.dart';
+import '../../market/live_quotes.dart';
 import '../../market/market_data_service.dart';
 import '../../market/models/instrument.dart';
+import '../../market/models/quote.dart';
 import '../../market/providers/market_data_provider.dart';
 import '../../market/quote_repository.dart';
 import '../../sync/sync_engine.dart';
+import '../../trading/portfolio.dart';
 import '../../trading/portfolio_engine.dart';
 import '../../trading/trading_engine.dart';
 import '../../design/tokens.dart';
@@ -28,6 +32,8 @@ class PortfolioTab extends StatefulWidget {
     required this.quotes,
     required this.marketData,
     required this.engine,
+    required this.snapshots,
+    required this.liveQuotes,
     required this.syncEngine,
     required this.syncOutcome,
     required this.pendingSync,
@@ -42,6 +48,8 @@ class PortfolioTab extends StatefulWidget {
   final QuoteRepository quotes;
   final MarketDataService marketData;
   final TradingEngine engine;
+  final EquitySnapshotRepository snapshots;
+  final LiveQuoteService liveQuotes;
   final SyncEngine syncEngine;
   final SyncOutcome? syncOutcome;
   final int pendingSync;
@@ -61,8 +69,20 @@ class _PortfolioTabState extends State<PortfolioTab> {
   @override
   void initState() {
     super.initState();
+    // Rebuild at most once per coalesced batch, never per tick.
+    widget.liveQuotes.addListener(_onLiveQuotes);
     // Price the book on first display, when there is something to price.
     WidgetsBinding.instance.addPostFrameCallback((_) => _markToMarket());
+  }
+
+  @override
+  void dispose() {
+    widget.liveQuotes.removeListener(_onLiveQuotes);
+    super.dispose();
+  }
+
+  void _onLiveQuotes() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _markToMarket() async {
@@ -72,7 +92,10 @@ class _PortfolioTabState extends State<PortfolioTab> {
       final instrument = widget.instruments.get(position.symbol);
       if (instrument != null) instruments.add(instrument);
     }
-    if (instruments.isEmpty) return;
+    if (instruments.isEmpty) {
+      _recordSnapshot();
+      return;
+    }
 
     setState(() {
       _marking = true;
@@ -87,6 +110,45 @@ class _PortfolioTabState extends State<PortfolioTab> {
     } finally {
       if (mounted) setState(() => _marking = false);
     }
+    _recordSnapshot();
+  }
+
+  PortfolioAnalytics _buildAnalytics(
+    PortfolioSnapshot snapshot,
+    Map<String, Quote> quoteMap,
+  ) {
+    final instruments = <String, Instrument>{};
+    final bonds = <String, BondDetails>{};
+    for (final position in snapshot.openPositions) {
+      final instrument = widget.instruments.get(position.symbol);
+      if (instrument != null) instruments[position.symbol] = instrument;
+      final bond = widget.instruments.bondDetails(position.symbol);
+      if (bond != null) bonds[position.symbol] = bond;
+    }
+    return PortfolioAnalyticsBuilder.build(
+      snapshot: snapshot,
+      instruments: instruments,
+      quotes: quoteMap,
+      bonds: bonds,
+      netDeposits: widget.ledger.netDeposits(),
+    );
+  }
+
+  /// Upserts today's marked-to-market valuation so the equity curve grows into
+  /// a true daily history.
+  void _recordSnapshot() {
+    final state = PortfolioEngine.replay(widget.ledger.all());
+    final symbols =
+        state.openPositions.map((p) => p.symbol).toList(growable: false);
+    final analytics = _buildAnalytics(state, widget.quotes.getMany(symbols));
+    widget.snapshots.record(
+      at: DateTime.now().toUtc(),
+      netLiquidation: analytics.netLiquidation,
+      cash: analytics.cash,
+      marketValue: analytics.marketValue,
+      realisedPnl: analytics.realisedPnl,
+      unrealisedPnl: analytics.unrealisedPnl,
+    );
   }
 
   @override
@@ -95,33 +157,30 @@ class _PortfolioTabState extends State<PortfolioTab> {
     final snapshot = PortfolioEngine.replay(events);
     final heldSymbols =
         snapshot.openPositions.map((p) => p.symbol).toList(growable: false);
-
     final quoteMap = widget.quotes.getMany(heldSymbols);
-    final instrumentMap = <String, Instrument>{};
-    final bondMap = <String, BondDetails>{};
-    for (final symbol in heldSymbols) {
-      final instrument = widget.instruments.get(symbol);
-      if (instrument != null) instrumentMap[symbol] = instrument;
-      final bond = widget.instruments.bondDetails(symbol);
-      if (bond != null) bondMap[symbol] = bond;
-    }
 
-    final analytics = PortfolioAnalyticsBuilder.build(
-      snapshot: snapshot,
-      instruments: instrumentMap,
-      quotes: quoteMap,
-      bonds: bondMap,
-      netDeposits: widget.ledger.netDeposits(),
-    );
+    final analytics = _buildAnalytics(snapshot, quoteMap);
 
+    // Prefer recorded daily marks; fall back to the ledger curve until at least
+    // two days have been snapshotted.
+    final recorded = widget.snapshots.all();
     final livePrices = <String, double>{
       for (final quote in quoteMap.values) quote.symbol: quote.price,
     };
-    final curve = EquityCurve.filter(
-      EquityCurve.fromLedger(events, livePrices: livePrices),
-      _range,
+    final fullCurve = recorded.length >= 2
+        ? EquityCurve.fromSnapshots(recorded)
+        : EquityCurve.fromLedger(events, livePrices: livePrices);
+    final curve = EquityCurve.filter(fullCurve, _range);
+
+    // Risk-free proxy: a short-dated sovereign yield when one is cached.
+    final riskFreeAnnual = (widget.quotes.get('DGS1MO')?.price ??
+            widget.quotes.get('DTB3')?.price ??
+            0.0) /
+        100.0;
+    final metrics = CurveMetrics.compute(
+      curve,
+      riskFreeRateAnnual: riskFreeAnnual,
     );
-    final metrics = CurveMetrics.compute(curve);
     final stats = TradeStats.fromRealisations(
       TradeStats.realisedTrades(events),
     );

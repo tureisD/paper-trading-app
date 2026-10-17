@@ -3,8 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:paper_trading_app/data/app_database.dart';
-import 'package:paper_trading_app/data/ledger_repository.dart';
+import 'package:paper_trading_app/data/app_database.dart';import 'package:paper_trading_app/data/ledger_repository.dart';
 import 'package:paper_trading_app/data/models/ledger_event.dart';
 import 'package:paper_trading_app/market/asset_class.dart';
 import 'package:paper_trading_app/market/instrument_repository.dart';
@@ -385,6 +384,43 @@ void main() {
       expect(engine.isConfigured, isTrue);
       engine.disconnect();
       expect(engine.isConfigured, isFalse);
+    });
+
+    test('schedules an automatic retry when rate limited', () async {
+      final limited = SyncEngine(
+        database: a.db,
+        ledger: a.ledger,
+        config: a.config,
+        deviceId: 'device_a',
+        clientFactory: (_) => GistClient(
+          token: gist.token,
+          client: MockClient(
+            (_) async => http.Response(
+              '{"message":"API rate limit exceeded"}',
+              403,
+              headers: {
+                'x-ratelimit-remaining': '0',
+                'x-ratelimit-reset':
+                    '${DateTime.now().add(const Duration(minutes: 3)).millisecondsSinceEpoch ~/ 1000}',
+              },
+            ),
+          ),
+        ),
+      );
+      addTearDown(limited.dispose);
+
+      a.config.token = 'test-token';
+      a.config.gistId = 'gist_test_1';
+
+      final outcome = await limited.syncNow();
+
+      expect(outcome.state, SyncState.offline);
+      expect(limited.nextRetryAt, isNotNull);
+      expect(
+        limited.nextRetryAt!.isAfter(DateTime.now()),
+        isTrue,
+        reason: 'retry is scheduled in the future',
+      );
     });
   });
 }

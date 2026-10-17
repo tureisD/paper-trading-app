@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'analytics/equity_snapshot_repository.dart';
 import 'core/ids.dart';
 import 'data/app_database.dart';
 import 'data/ledger_repository.dart';
@@ -49,6 +50,7 @@ class PaperTradingApp extends StatelessWidget {
       schemaVersion: Schema.version,
       onMerged: engine.rebuildCache,
     );
+    final snapshots = EquitySnapshotRepository(database);
 
     return MaterialApp(
       title: 'TureisBanking',
@@ -66,6 +68,7 @@ class PaperTradingApp extends StatelessWidget {
         ),
         engine: engine,
         syncEngine: syncEngine,
+        snapshots: snapshots,
       ),
     );
   }

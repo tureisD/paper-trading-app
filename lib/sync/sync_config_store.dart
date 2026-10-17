@@ -71,6 +71,14 @@ class SyncConfigStore {
   bool get isConfigured =>
       (token?.isNotEmpty ?? false) && (gistId?.isNotEmpty ?? false);
 
+  /// Content hash of a shard we have already merged, so unchanged shards are
+  /// not decoded again (a cheap checkpoint).
+  String? shardHash(String fileName) =>
+      _db.getSyncState('shard.hash.$fileName');
+
+  void setShardHash(String fileName, String? hash) =>
+      _db.setSyncState('shard.hash.$fileName', hash);
+
   void clearCredentials() {
     token = null;
     gistId = null;

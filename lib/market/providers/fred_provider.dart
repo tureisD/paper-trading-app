@@ -1,5 +1,6 @@
 import 'package:http/http.dart' as http;
 
+import '../../core/dates.dart';
 import '../asset_class.dart';
 import '../models/candle.dart';
 import '../models/quote.dart';
@@ -102,7 +103,7 @@ class FredProvider implements MarketDataProvider {
       if (line.isEmpty) continue;
       final parts = line.split(',');
       if (parts.length < 2) continue;
-      final date = DateTime.tryParse(parts[0].trim());
+      final date = parseDateUtc(parts[0].trim());
       final value = double.tryParse(parts[1].trim());
       if (date == null || value == null) continue;
       out.add((date: date, value: value));

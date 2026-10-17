@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "note": "Curated seed catalog. The schema and FTS5 index are sized for 50k+ instruments; this subset exercises every asset class and provider. Expand by appending entries (provider/providerSymbol route live data). Expense ratios are approximate published figures for seed purposes.",
   "instruments": [
     { "symbol": "AAPL",  "name": "Apple Inc.",                    "assetClass": "STOCK", "exchange": "NASDAQ", "isin": "US0378331005", "provider": "yahoo", "providerSymbol": "AAPL" },
@@ -81,6 +81,10 @@
     { "symbol": "DGS2",   "name": "US Treasury 2-Year Yield (CMT)",  "assetClass": "BOND", "exchange": "FRED", "provider": "fred", "providerSymbol": "DGS2",  "bond": { "parValue": 100, "couponFrequency": 2, "dayCount": "Actual/Actual" } },
     { "symbol": "DGS5",   "name": "US Treasury 5-Year Yield (CMT)",  "assetClass": "BOND", "exchange": "FRED", "provider": "fred", "providerSymbol": "DGS5",  "bond": { "parValue": 100, "couponFrequency": 2, "dayCount": "Actual/Actual" } },
     { "symbol": "DGS10",  "name": "US Treasury 10-Year Yield (CMT)", "assetClass": "BOND", "exchange": "FRED", "provider": "fred", "providerSymbol": "DGS10", "bond": { "parValue": 100, "couponFrequency": 2, "dayCount": "Actual/Actual" } },
-    { "symbol": "DGS30",  "name": "US Treasury 30-Year Yield (CMT)", "assetClass": "BOND", "exchange": "FRED", "provider": "fred", "providerSymbol": "DGS30", "bond": { "parValue": 100, "couponFrequency": 2, "dayCount": "Actual/Actual" } }
+    { "symbol": "DGS30",  "name": "US Treasury 30-Year Yield (CMT)", "assetClass": "BOND", "exchange": "FRED", "provider": "fred", "providerSymbol": "DGS30", "bond": { "parValue": 100, "couponFrequency": 2, "dayCount": "Actual/Actual" } },
+
+    { "symbol": "EU2Y",  "name": "Euro Area 2-Year Benchmark Yield",  "assetClass": "BOND", "exchange": "ECB", "currency": "EUR", "provider": "ecb", "providerSymbol": "YC/B.U2.EUR.4F.G_N_A.SV_C_YM.SR_2Y",  "bond": { "parValue": 100, "couponFrequency": 1, "dayCount": "Actual/Actual" } },
+    { "symbol": "EU5Y",  "name": "Euro Area 5-Year Benchmark Yield",  "assetClass": "BOND", "exchange": "ECB", "currency": "EUR", "provider": "ecb", "providerSymbol": "YC/B.U2.EUR.4F.G_N_A.SV_C_YM.SR_5Y",  "bond": { "parValue": 100, "couponFrequency": 1, "dayCount": "Actual/Actual" } },
+    { "symbol": "EU10Y", "name": "Euro Area 10-Year Benchmark Yield", "assetClass": "BOND", "exchange": "ECB", "currency": "EUR", "provider": "ecb", "providerSymbol": "YC/B.U2.EUR.4F.G_N_A.SV_C_YM.SR_10Y", "bond": { "parValue": 100, "couponFrequency": 1, "dayCount": "Actual/Actual" } }
   ]
 }

@@ -8,6 +8,11 @@ class EventType {
   static const String buy = 'BUY';
   static const String sell = 'SELL';
   static const String bondCoupon = 'BOND_COUPON';
+
+  /// Working-order lifecycle, recorded so resting orders travel between devices.
+  static const String orderPlaced = 'ORDER_PLACED';
+  static const String orderCancelled = 'ORDER_CANCELLED';
+  static const String orderFilled = 'ORDER_FILLED';
 }
 
 /// A single immutable row of the append-only portfolio ledger.
@@ -28,6 +33,7 @@ class LedgerEvent {
     this.fee = 0.0,
     this.currency = 'USD',
     this.synced = false,
+    this.meta,
   });
 
   final String eventId;
@@ -45,6 +51,10 @@ class LedgerEvent {
   final String currency;
   final bool synced;
 
+  /// Free-form JSON payload (order linkage, coupon dates, ...). Never affects
+  /// cash or positions during replay.
+  final String? meta;
+
   factory LedgerEvent.fromRow(Row row) {
     return LedgerEvent(
       eventId: row['event_id'] as String,
@@ -59,6 +69,7 @@ class LedgerEvent {
       fee: (row['fee'] as num).toDouble(),
       currency: row['currency'] as String,
       synced: (row['synced'] as int) != 0,
+      meta: row['meta'] as String?,
     );
   }
 
@@ -75,5 +86,6 @@ class LedgerEvent {
         fee,
         currency,
         synced ? 1 : 0,
+        meta,
       ];
 }

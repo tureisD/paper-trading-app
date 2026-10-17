@@ -4,7 +4,9 @@ import 'package:flutter/services.dart';
 import '../../data/app_database.dart';
 import '../../data/ledger_repository.dart';
 import '../../design/tokens.dart';
+import '../../analytics/equity_snapshot_repository.dart';
 import '../../market/instrument_repository.dart';
+import '../../market/live_quotes.dart';
 import '../../market/market_data_service.dart';
 import '../../market/quote_repository.dart';
 import '../../sync/sync_engine.dart';
@@ -33,6 +35,7 @@ class HomeShell extends StatefulWidget {
     required this.marketData,
     required this.engine,
     required this.syncEngine,
+    required this.snapshots,
   });
 
   final AppDatabase database;
@@ -43,6 +46,7 @@ class HomeShell extends StatefulWidget {
   final MarketDataService marketData;
   final TradingEngine engine;
   final SyncEngine syncEngine;
+  final EquitySnapshotRepository snapshots;
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -55,15 +59,27 @@ class _HomeShellState extends State<HomeShell> {
       GlobalKey<DiscoveryTabState>();
 
   SyncOutcome? _syncOutcome;
+  late final LiveQuoteService _liveQuotes;
 
   @override
   void initState() {
     super.initState();
+    _liveQuotes = LiveQuoteService(
+      quotes: widget.quotes,
+      engine: widget.engine,
+    );
     _syncOutcome = widget.syncEngine.lastOutcome;
     // Silent background pull/push when a vault is already configured.
     if (widget.syncEngine.isConfigured) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _syncNow());
     }
+  }
+
+  @override
+  void dispose() {
+    _liveQuotes.dispose();
+    widget.syncEngine.dispose();
+    super.dispose();
   }
 
   void _selectTab(int index) {
@@ -156,7 +172,9 @@ class _HomeShellState extends State<HomeShell> {
                     quotes: widget.quotes,
                     marketData: widget.marketData,
                     engine: widget.engine,
+                    snapshots: widget.snapshots,
                     syncEngine: widget.syncEngine,
+                    liveQuotes: _liveQuotes,
                     syncOutcome: _syncOutcome,
                     pendingSync: widget.ledger.pendingCount(),
                     onOpenSync: _openSyncDialog,
@@ -169,6 +187,7 @@ class _HomeShellState extends State<HomeShell> {
                     quotes: widget.quotes,
                     marketData: widget.marketData,
                     engine: widget.engine,
+                    liveQuotes: _liveQuotes,
                     onTraded: () => setState(() {}),
                   ),
                 ],

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:paper_trading_app/analytics/equity_snapshot_repository.dart';
 import 'package:paper_trading_app/data/app_database.dart';
 import 'package:paper_trading_app/data/ledger_repository.dart';
 import 'package:paper_trading_app/design/app_theme.dart';
@@ -72,6 +73,7 @@ void main() {
         symbol: 'MSFT',
         name: 'Microsoft Corporation',
         assetClass: AssetClass.stock,
+        exchange: 'NASDAQ',
         isin: 'US5949181045',
         provider: 'yahoo',
       );
@@ -170,6 +172,7 @@ void main() {
                 config: syncConfig,
                 deviceId: 'windows_desktop',
               ),
+              snapshots: EquitySnapshotRepository(db),
             ),
           ),
         ),
