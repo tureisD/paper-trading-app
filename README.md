@@ -93,7 +93,7 @@ Grab the latest build from the
 
 | Asset | Notes |
 | :--- | :--- |
-| `TureisBanking-*-windows-x64-portable.zip` | Unzip anywhere and run `TureisBanking.exe`. No installer. |
+| `TureisBanking-*-windows-x64-setup.exe` | **11 MB installer.** Per-user (no admin prompt), Start-menu and desktop shortcuts, proper uninstaller. |
 | `TureisBanking-*-android-arm64-v8a.apk` | **Recommended**, ~20 MB. |
 | `TureisBanking-*-android-armeabi-v7a.apk` | Older 32-bit devices, ~17 MB. |
 | `TureisBanking-*-android-x86_64.apk` | Emulators and x86 tablets, ~21 MB. |
@@ -102,6 +102,9 @@ Grab the latest build from the
 
 Release Android builds are **debug-key signed**, so Android may warn when
 sideloading. Fine for personal use; add a keystore before distributing.
+
+Prefer a portable Windows copy? `flutter build windows --release` produces a
+self-contained folder — no installer, no registry.
 
 ---
 
@@ -286,6 +289,34 @@ is no state to merge, only events to insert once.
   ~0.2 s instead of ~15 s.
 
 ---
+
+### Footprint
+
+The Windows installer is **~11 MB** (LZMA-solid NSIS) and installs about **31 MB**.
+That floor is the engine, not the app:
+
+| Component | Size | Notes |
+| :--- | :--- | :--- |
+| `flutter_windows.dll` | 21 MB | Flutter engine — fixed cost, already stripped |
+| `data/app.so` | 5.9 MB | Dart AOT snapshot of this app |
+| `sqlite3.dll` | 1.7 MB | Bundled SQLite (native assets) |
+| assets | 1.3 MB | Fonts ~1 MB + catalogs ~163 KB |
+| `TureisBanking.exe` + `uninstall.exe` | 0.8 MB | Runner + uninstaller |
+
+The catalog is the part that is ours, so it is the part that got optimised: the
+instrument lists are **gzipped and stripped of defaulted fields** (provider
+`yahoo`, currency `USD`, `providerSymbol` == symbol), taking them from **2.0 MB to
+163 KB**. Regenerate them with `node tool/build_catalog.js`.
+
+Getting dramatically below ~30 MB would mean not shipping the Flutter engine —
+i.e. a different stack (Tauri/webview is ~5–10 MB) — which is a rewrite.
+
+### Release tooling
+
+- `tool/build_catalog.js` — regenerates the instrument catalogs (downloads the
+  official NASDAQ Trader directory, writes gzipped assets).
+- `tool/installer.nsi` — the NSIS installer; build with
+  `makensis tool/installer.nsi` from the project root.
 
 ## Testing
 

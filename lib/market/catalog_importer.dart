@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io' show GZipCodec;
 
 import 'package:flutter/services.dart' show rootBundle;
 
@@ -24,11 +25,24 @@ class CatalogImporter {
 
   /// Everything seeded on first run. Bulk lists come first so the curated file
   /// (which carries ISINs, exchange names and expense ratios) wins on conflicts.
+  ///
+  /// The generated lists ship gzipped: ~250 KB instead of ~2 MB.
   static const List<String> assetPaths = <String>[
-    'assets/data/instruments_us.json',
-    'assets/data/instruments_intl.json',
+    'assets/data/instruments_us.json.gz',
+    'assets/data/instruments_intl.json.gz',
     assetPath,
   ];
+
+  /// Reads a bundled catalog, transparently gunzipping `.gz` assets.
+  static Future<String> readAsset(String path) async {
+    final data = await rootBundle.load(path);
+    final bytes =
+        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+    if (path.endsWith('.gz')) {
+      return utf8.decode(GZipCodec().decode(bytes));
+    }
+    return utf8.decode(bytes);
+  }
 
   /// Seeds or refreshes the catalog.
   ///
@@ -39,7 +53,7 @@ class CatalogImporter {
     final payloads = <CatalogPayload>[];
     for (final path in assetPaths) {
       try {
-        payloads.add(parse(await rootBundle.loadString(path)));
+        payloads.add(parse(await readAsset(path)));
       } catch (_) {
         // A missing optional bulk file must not block seeding.
       }

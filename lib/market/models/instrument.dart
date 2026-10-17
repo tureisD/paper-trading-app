@@ -84,8 +84,9 @@ class Instrument {
         currency: (json['currency'] as String?) ?? 'USD',
         isin: json['isin'] as String?,
         cusip: json['cusip'] as String?,
-        provider: json['provider'] as String?,
-        providerSymbol: json['providerSymbol'] as String?,
+        provider: (json['provider'] as String?) ?? 'yahoo',
+        providerSymbol: (json['providerSymbol'] as String?) ??
+            (json['symbol'] as String),
         expenseRatio: (json['expenseRatio'] as num?)?.toDouble(),
       );
 }

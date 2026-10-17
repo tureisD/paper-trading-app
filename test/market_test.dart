@@ -1,4 +1,3 @@
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -255,7 +254,7 @@ void main() {
       var version = 0;
       for (final path in CatalogImporter.assetPaths) {
         final payload =
-            CatalogImporter.parse(await rootBundle.loadString(path));
+            CatalogImporter.parse(await CatalogImporter.readAsset(path));
         instruments.addAll(payload.instruments);
         if (payload.version > version) version = payload.version;
       }
