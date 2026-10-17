@@ -61,6 +61,7 @@ void main() {
         orders: PendingOrderRepository(db),
         positions: positions,
         instruments: instruments,
+        accountId: 'default',
       );
       AccountRepository(db).ensureDefault();
 
@@ -183,6 +184,10 @@ void main() {
               snapshots: EquitySnapshotRepository(db),
               settings: settings,
               theme: theme,
+              accounts: AccountRepository(db),
+              accountId: 'default',
+              accountName: 'Default portfolio',
+              onAccountChanged: (_) {},
             ),
           ),
         ),

@@ -31,6 +31,10 @@ class PortfolioEngine {
           cash += event.quantity;
           break;
 
+        case EventType.cashWithdrawal:
+          cash -= event.quantity;
+          break;
+
         case EventType.buy:
         case EventType.sell:
           if (symbol == null) break;

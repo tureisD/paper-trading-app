@@ -6,7 +6,6 @@ import '../market/asset_class.dart';
 import '../market/instrument_repository.dart';
 import '../market/models/instrument.dart';
 import '../market/models/quote.dart';
-import 'account_repository.dart';
 import 'bond_math.dart';
 import 'fee_model.dart';
 import 'order.dart';
@@ -52,6 +51,7 @@ class TradingEngine {
     required this.orders,
     required this.positions,
     required this.instruments,
+    required this.accountId,
   });
 
   final AppDatabase database;
@@ -60,15 +60,23 @@ class TradingEngine {
   final PositionRepository positions;
   final InstrumentRepository instruments;
 
-  /// Derived portfolio state straight from the ledger.
-  PortfolioSnapshot snapshot() => PortfolioEngine.replay(ledger.all());
+  /// Portfolio this engine trades.
+  final String accountId;
 
-  /// Rebuilds the position cache from the ledger.
-  void rebuildCache({
-    String accountId = AccountRepository.defaultAccountId,
-  }) {
-    final state = snapshot();
-    positions.replaceAll(accountId, state.positions.values.toList());
+  /// Derived portfolio state straight from the ledger.
+  PortfolioSnapshot snapshot() =>
+      PortfolioEngine.replay(ledger.all(accountId: accountId));
+
+  /// Rebuilds the cached positions for **every** portfolio from the ledger.
+  void rebuildCache() {
+    final events = ledger.all();
+    final accounts = events.map((event) => event.accountId).toSet();
+    for (final owner in accounts) {
+      final state = PortfolioEngine.replay(
+        events.where((event) => event.accountId == owner),
+      );
+      positions.replaceAll(owner, state.positions.values.toList());
+    }
   }
 
   /// Submits an order. Marketable orders fill immediately; otherwise the order
@@ -82,8 +90,9 @@ class TradingEngine {
     double? limitPrice,
     double? stopPrice,
     DateTime? now,
-    String accountId = AccountRepository.defaultAccountId,
+    String? accountId,
   }) {
+    final owner = accountId ?? this.accountId;
     final timestamp = (now ?? DateTime.now()).toUtc();
     final orderId = Ids.uuidV7(now: timestamp);
 
@@ -91,7 +100,7 @@ class TradingEngine {
     if (!FeeModel.isValidQuantity(quantity, instrument.assetClass)) {
       return _reject(
         orderId: orderId,
-        accountId: accountId,
+        accountId: owner,
         instrument: instrument,
         side: side,
         type: type,
@@ -106,7 +115,7 @@ class TradingEngine {
     if (type == OrderType.limit && limitPrice == null) {
       return _reject(
         orderId: orderId,
-        accountId: accountId,
+        accountId: owner,
         instrument: instrument,
         side: side,
         type: type,
@@ -120,7 +129,7 @@ class TradingEngine {
     if (type == OrderType.stop && stopPrice == null) {
       return _reject(
         orderId: orderId,
-        accountId: accountId,
+        accountId: owner,
         instrument: instrument,
         side: side,
         type: type,
@@ -134,7 +143,7 @@ class TradingEngine {
 
     Order order = Order(
       orderId: orderId,
-      accountId: accountId,
+      accountId: owner,
       symbol: instrument.symbol,
       assetClass: instrument.assetClass,
       side: side,
@@ -165,7 +174,7 @@ class TradingEngine {
       if (quote == null && type == OrderType.market) {
         return _reject(
           orderId: orderId,
-          accountId: accountId,
+          accountId: owner,
           instrument: instrument,
           side: side,
           type: type,
@@ -357,7 +366,7 @@ class TradingEngine {
 
     // --- Risk checks ---
     if (order.side == OrderSide.buy) {
-      final available = ledger.cashBalance();
+      final available = ledger.cashBalance(accountId: order.accountId);
       if (notional + fee > available + 1e-6) {
         return _rejectOrder(
           order: order,
@@ -381,6 +390,7 @@ class TradingEngine {
 
     final event = ledger.newEvent(
       eventType: order.side == OrderSide.buy ? EventType.buy : EventType.sell,
+      accountId: order.accountId,
       symbol: order.symbol,
       assetClass: assetClass.wire,
       quantity: order.quantity,
@@ -399,7 +409,7 @@ class TradingEngine {
       filledEventId: event.eventId,
     );
     orders.upsert(filled);
-    rebuildCache(accountId: order.accountId);
+    rebuildCache();
 
     return TradeResult(
       order: filled,
@@ -463,6 +473,7 @@ class TradingEngine {
   ) {
     final event = ledger.newEvent(
       eventType: EventType.bondCoupon,
+      accountId: accountId,
       symbol: symbol,
       assetClass: AssetClass.bond.wire,
       quantity: amount,
@@ -470,9 +481,10 @@ class TradingEngine {
     );
     ledger.append(event);
     database.raw.execute(
-      'INSERT INTO bond_coupon_credits(symbol, coupon_date, event_id, credited_at) '
-      'VALUES(?, ?, ?, ?);',
+      'INSERT INTO bond_coupon_credits(account_id, symbol, coupon_date, event_id, credited_at) '
+      'VALUES(?, ?, ?, ?, ?);',
       [
+        accountId,
         symbol,
         _isoDate(couponDate),
         event.eventId,
@@ -483,16 +495,18 @@ class TradingEngine {
 
   bool _isCouponCredited(String symbol, DateTime couponDate) {
     final rows = database.raw.select(
-      'SELECT 1 FROM bond_coupon_credits WHERE symbol = ? AND coupon_date = ?;',
-      [symbol, _isoDate(couponDate)],
+      'SELECT 1 FROM bond_coupon_credits WHERE account_id = ? AND symbol = ? '
+      'AND coupon_date = ?;',
+      [accountId, symbol, _isoDate(couponDate)],
     );
     return rows.isNotEmpty;
   }
 
   DateTime? _lastCreditedCouponDate(String symbol) {
     final rows = database.raw.select(
-      'SELECT max(coupon_date) AS d FROM bond_coupon_credits WHERE symbol = ?;',
-      [symbol],
+      'SELECT max(coupon_date) AS d FROM bond_coupon_credits '
+      'WHERE account_id = ? AND symbol = ?;',
+      [accountId, symbol],
     );
     final value = rows.first['d'];
     if (value == null) return null;
@@ -502,8 +516,8 @@ class TradingEngine {
   DateTime? _firstAcquisitionDate(String symbol) {
     final rows = database.raw.select(
       'SELECT min(hlc_timestamp) AS t FROM ledger_events '
-      "WHERE symbol = ? AND event_type = 'BUY';",
-      [symbol],
+      "WHERE account_id = ? AND symbol = ? AND event_type = 'BUY';",
+      [accountId, symbol],
     );
     final value = rows.first['t'];
     if (value == null) return null;

@@ -60,6 +60,7 @@ class _Harness {
       orders: PendingOrderRepository(db),
       positions: PositionRepository(db),
       instruments: instruments,
+      accountId: 'default',
     );
     AccountRepository(db).ensureDefault();
   }

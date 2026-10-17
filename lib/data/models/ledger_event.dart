@@ -5,6 +5,7 @@ class EventType {
   const EventType._();
 
   static const String cashDeposit = 'CASH_DEPOSIT';
+  static const String cashWithdrawal = 'CASH_WITHDRAWAL';
   static const String buy = 'BUY';
   static const String sell = 'SELL';
   static const String bondCoupon = 'BOND_COUPON';
@@ -34,6 +35,7 @@ class LedgerEvent {
     this.currency = 'USD',
     this.synced = false,
     this.meta,
+    this.accountId = 'default',
   });
 
   final String eventId;
@@ -55,6 +57,9 @@ class LedgerEvent {
   /// cash or positions during replay.
   final String? meta;
 
+  /// Portfolio this event belongs to.
+  final String accountId;
+
   factory LedgerEvent.fromRow(Row row) {
     return LedgerEvent(
       eventId: row['event_id'] as String,
@@ -70,6 +75,7 @@ class LedgerEvent {
       currency: row['currency'] as String,
       synced: (row['synced'] as int) != 0,
       meta: row['meta'] as String?,
+      accountId: (row['account_id'] as String?) ?? 'default',
     );
   }
 
@@ -87,5 +93,6 @@ class LedgerEvent {
         currency,
         synced ? 1 : 0,
         meta,
+        accountId,
       ];
 }

@@ -7,6 +7,9 @@ import 'models/ledger_event.dart';
 ///
 /// There are deliberately no UPDATE or DELETE paths for event content: the
 /// ledger is immutable and portfolio state is derived by replaying it.
+///
+/// Events belong to a **portfolio** (`account_id`). Sync always moves every
+/// portfolio at once; the UI scopes reads to the active one.
 class LedgerRepository {
   LedgerRepository(this._db, {String? deviceId})
       : _deviceId = deviceId ?? currentDeviceId(),
@@ -21,11 +24,14 @@ class LedgerRepository {
 
   HlcClock get clock => _clock;
 
+  static const String defaultAccountId = 'default';
+
   static const String _insertSql = '''
     INSERT INTO ledger_events (
       event_id, hlc_timestamp, device_id, event_type, symbol, asset_class,
-      quantity, execution_price, accrued_interest, fee, currency, synced, meta
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+      quantity, execution_price, accrued_interest, fee, currency, synced, meta,
+      account_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
   ''';
 
   static HlcClock _initClock(AppDatabase db) {
@@ -38,6 +44,7 @@ class LedgerRepository {
   /// Builds a new event stamped with a UUIDv7 id and a monotonic HLC.
   LedgerEvent newEvent({
     required String eventType,
+    String accountId = defaultAccountId,
     String? symbol,
     String? assetClass,
     double quantity = 0.0,
@@ -62,6 +69,7 @@ class LedgerRepository {
       fee: fee,
       currency: currency,
       meta: meta,
+      accountId: accountId,
     );
   }
 
@@ -85,11 +93,29 @@ class LedgerRepository {
   /// Convenience builder for a cash deposit.
   LedgerEvent deposit({
     required double amount,
+    String accountId = defaultAccountId,
     String currency = 'USD',
     DateTime? at,
   }) {
     return newEvent(
       eventType: EventType.cashDeposit,
+      accountId: accountId,
+      quantity: amount,
+      currency: currency,
+      at: at,
+    );
+  }
+
+  /// Convenience builder for a cash withdrawal.
+  LedgerEvent withdrawal({
+    required double amount,
+    String accountId = defaultAccountId,
+    String currency = 'USD',
+    DateTime? at,
+  }) {
+    return newEvent(
+      eventType: EventType.cashWithdrawal,
+      accountId: accountId,
       quantity: amount,
       currency: currency,
       at: at,
@@ -97,13 +123,22 @@ class LedgerRepository {
   }
 
   /// Every event, oldest first (matches deterministic replay order).
-  List<LedgerEvent> all() {
-    final rows = _db.raw
-        .select('SELECT * FROM ledger_events ORDER BY hlc_timestamp, event_id;');
+  /// Pass [accountId] to scope to a single portfolio.
+  List<LedgerEvent> all({String? accountId}) {
+    final rows = accountId == null
+        ? _db.raw.select(
+            'SELECT * FROM ledger_events ORDER BY hlc_timestamp, event_id;',
+          )
+        : _db.raw.select(
+            'SELECT * FROM ledger_events WHERE account_id = ? '
+            'ORDER BY hlc_timestamp, event_id;',
+            [accountId],
+          );
     return rows.map(LedgerEvent.fromRow).toList(growable: false);
   }
 
-  /// Events created on this device that still need to reach the vault.
+  /// Events created on this device that still need to reach the vault
+  /// (across every portfolio).
   List<LedgerEvent> pendingEvents() {
     final rows = _db.raw.select(
       'SELECT * FROM ledger_events WHERE synced = 0 ORDER BY hlc_timestamp;',
@@ -135,7 +170,7 @@ class LedgerRepository {
   /// Advances the HLC past a remote event so local writes sort after it.
   void observeHlc(String encoded) => _clock.observe(Hlc.parse(encoded));
 
-  /// Events still awaiting push to the gist.
+  /// Events still awaiting push to the gist (every portfolio).
   int pendingCount() {
     final row = _db.raw
         .select('SELECT count(*) AS c FROM ledger_events WHERE synced = 0;')
@@ -143,21 +178,13 @@ class LedgerRepository {
     return row['c'] as int;
   }
 
-  /// Total cash ever deposited (used as the return denominator).
-  double netDeposits() {
-    final row = _db.raw.select(
-      "SELECT COALESCE(SUM(quantity), 0) AS d FROM ledger_events "
-      "WHERE event_type = 'CASH_DEPOSIT';",
-    ).first;
-    return (row['d'] as num).toDouble();
-  }
-
   /// Derived cash balance (never stored). Mirrors the replay rules in roadmap 5.2.
-  double cashBalance() {
+  double cashBalance({String? accountId}) {
     final row = _db.raw.select('''
       SELECT COALESCE(SUM(
         CASE
           WHEN event_type IN ('CASH_DEPOSIT', 'BOND_COUPON') THEN quantity
+          WHEN event_type = 'CASH_WITHDRAWAL' THEN -quantity
           WHEN event_type = 'SELL'
             THEN quantity * (execution_price + accrued_interest) - fee
           WHEN event_type = 'BUY'
@@ -165,8 +192,50 @@ class LedgerRepository {
           ELSE 0
         END
       ), 0) AS cash
-      FROM ledger_events;
-    ''').first;
+      FROM ledger_events
+      ${accountId == null ? '' : 'WHERE account_id = ?'};
+    ''', accountId == null ? const <Object?>[] : <Object?>[accountId]).first;
     return (row['cash'] as num).toDouble();
+  }
+
+  /// Net capital contributed: deposits minus withdrawals.
+  double netDeposits({String? accountId}) {
+    final row = _db.raw.select('''
+      SELECT COALESCE(SUM(
+        CASE
+          WHEN event_type = 'CASH_DEPOSIT' THEN quantity
+          WHEN event_type = 'CASH_WITHDRAWAL' THEN -quantity
+          ELSE 0
+        END
+      ), 0) AS d
+      FROM ledger_events
+      ${accountId == null ? '' : 'WHERE account_id = ?'};
+    ''', accountId == null ? const <Object?>[] : <Object?>[accountId]).first;
+    return (row['d'] as num).toDouble();
+  }
+
+  /// Removes every local trace of a portfolio. Other synced devices will
+  /// re-upload their copy, so this is a local reset, not a tombstone.
+  void purgeAccount(String accountId) {
+    if (accountId == defaultAccountId) return;
+    _db.raw.execute('BEGIN;');
+    try {
+      _db.raw.execute('DELETE FROM ledger_events WHERE account_id = ?;', [
+        accountId,
+      ]);
+      _db.raw.execute('DELETE FROM positions_cache WHERE account_id = ?;', [
+        accountId,
+      ]);
+      _db.raw.execute('DELETE FROM equity_snapshots WHERE account_id = ?;', [
+        accountId,
+      ]);
+      _db.raw.execute('DELETE FROM pending_orders WHERE account_id = ?;', [
+        accountId,
+      ]);
+      _db.raw.execute('COMMIT;');
+    } catch (_) {
+      _db.raw.execute('ROLLBACK;');
+      rethrow;
+    }
   }
 }

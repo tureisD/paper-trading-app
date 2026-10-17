@@ -19,6 +19,7 @@ import '../../market/quote_repository.dart';
 import '../../sync/sync_engine.dart';
 import '../../trading/order.dart';
 import '../../trading/fee_model.dart';
+import '../../trading/account_repository.dart';
 import '../../trading/portfolio.dart';
 import '../../trading/portfolio_engine.dart';
 import '../../trading/trading_engine.dart';
@@ -48,6 +49,10 @@ class PortfolioTab extends StatefulWidget {
     required this.onDeposit,
     required this.settings,
     required this.theme,
+    required this.accounts,
+    required this.accountId,
+    required this.accountName,
+    required this.onAccountChanged,
   });
 
   final String databasePath;
@@ -66,6 +71,10 @@ class PortfolioTab extends StatefulWidget {
   final VoidCallback onDeposit;
   final SettingsStore settings;
   final ThemeController theme;
+  final AccountRepository accounts;
+  final String accountId;
+  final String accountName;
+  final ValueChanged<String> onAccountChanged;
 
   @override
   State<PortfolioTab> createState() => _PortfolioTabState();
@@ -96,7 +105,7 @@ class _PortfolioTabState extends State<PortfolioTab> {
   }
 
   Future<void> _markToMarket() async {
-    final state = PortfolioEngine.replay(widget.ledger.all());
+    final state = PortfolioEngine.replay(widget.ledger.all(accountId: widget.accountId));
     final instruments = <Instrument>[];
     for (final position in state.openPositions) {
       final instrument = widget.instruments.get(position.symbol);
@@ -140,7 +149,7 @@ class _PortfolioTabState extends State<PortfolioTab> {
       instruments: instruments,
       quotes: quoteMap,
       bonds: bonds,
-      netDeposits: widget.ledger.netDeposits(),
+      netDeposits: widget.ledger.netDeposits(accountId: widget.accountId),
     );
   }
 
@@ -157,6 +166,10 @@ class _PortfolioTabState extends State<PortfolioTab> {
       settings: widget.settings,
       theme: widget.theme,
       ledger: widget.ledger,
+      accounts: widget.accounts,
+      accountId: widget.accountId,
+      accountName: widget.accountName,
+      onAccountChanged: widget.onAccountChanged,
       onChanged: () {
         if (mounted) setState(() {});
       },
@@ -213,11 +226,12 @@ class _PortfolioTabState extends State<PortfolioTab> {
   /// Upserts today's marked-to-market valuation so the equity curve grows into
   /// a true daily history.
   void _recordSnapshot() {
-    final state = PortfolioEngine.replay(widget.ledger.all());
+    final state = PortfolioEngine.replay(widget.ledger.all(accountId: widget.accountId));
     final symbols =
         state.openPositions.map((p) => p.symbol).toList(growable: false);
     final analytics = _buildAnalytics(state, widget.quotes.getMany(symbols));
     widget.snapshots.record(
+      accountId: widget.accountId,
       at: DateTime.now().toUtc(),
       netLiquidation: analytics.netLiquidation,
       cash: analytics.cash,
@@ -229,7 +243,7 @@ class _PortfolioTabState extends State<PortfolioTab> {
 
   @override
   Widget build(BuildContext context) {
-    final events = widget.ledger.all();
+    final events = widget.ledger.all(accountId: widget.accountId);
     final snapshot = PortfolioEngine.replay(events);
     final heldSymbols =
         snapshot.openPositions.map((p) => p.symbol).toList(growable: false);
@@ -239,7 +253,7 @@ class _PortfolioTabState extends State<PortfolioTab> {
 
     // Prefer recorded daily marks; fall back to the ledger curve until at least
     // two days have been snapshotted.
-    final recorded = widget.snapshots.all();
+    final recorded = widget.snapshots.all(accountId: widget.accountId);
     final livePrices = <String, double>{
       for (final quote in quoteMap.values) quote.symbol: quote.price,
     };
@@ -286,7 +300,7 @@ class _PortfolioTabState extends State<PortfolioTab> {
 
   Widget _summary(PortfolioAnalytics analytics) {
     return Panel(
-      title: 'ACCOUNT',
+      title: 'ACCOUNT • ${widget.accountName.toUpperCase()}',
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -585,7 +599,7 @@ class _PortfolioTabState extends State<PortfolioTab> {
           ),
           KeyValueRow(
             label: 'LEDGER EVENTS',
-            value: '${widget.ledger.all().length}',
+            value: '${widget.ledger.all(accountId: widget.accountId).length}',
             mono: true,
           ),
           KeyValueRow(

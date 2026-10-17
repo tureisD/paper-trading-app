@@ -51,10 +51,10 @@ class EquitySnapshotRepository {
 
   static const String _upsertSql = '''
     INSERT INTO equity_snapshots (
-      day, net_liquidation, cash, market_value, realised_pnl, unrealised_pnl,
-      recorded_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(day) DO UPDATE SET
+      account_id, day, net_liquidation, cash, market_value, realised_pnl,
+      unrealised_pnl, recorded_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(account_id, day) DO UPDATE SET
       net_liquidation = excluded.net_liquidation,
       cash = excluded.cash,
       market_value = excluded.market_value,
@@ -70,8 +70,10 @@ class EquitySnapshotRepository {
     required double marketValue,
     required double realisedPnl,
     required double unrealisedPnl,
+    String accountId = 'default',
   }) {
     _db.raw.execute(_upsertSql, [
+      accountId,
       EquitySnapshot.dayKey(at),
       netLiquidation,
       cash,
@@ -82,14 +84,24 @@ class EquitySnapshotRepository {
     ]);
   }
 
-  /// All snapshots, oldest first.
-  List<EquitySnapshot> all() {
-    final rows = _db.raw
-        .select('SELECT * FROM equity_snapshots ORDER BY day;');
+  /// Snapshots for one portfolio, oldest first.
+  List<EquitySnapshot> all({String? accountId}) {
+    final rows = accountId == null
+        ? _db.raw.select('SELECT * FROM equity_snapshots ORDER BY day;')
+        : _db.raw.select(
+            'SELECT * FROM equity_snapshots WHERE account_id = ? ORDER BY day;',
+            [accountId],
+          );
     return rows.map(EquitySnapshot.fromRow).toList(growable: false);
   }
 
-  int count() => _db.raw
-      .select('SELECT count(*) AS c FROM equity_snapshots;')
-      .first['c'] as int;
+  int count({String? accountId}) {
+    final row = accountId == null
+        ? _db.raw.select('SELECT count(*) AS c FROM equity_snapshots;').first
+        : _db.raw.select(
+            'SELECT count(*) AS c FROM equity_snapshots WHERE account_id = ?;',
+            [accountId],
+          ).first;
+    return row['c'] as int;
+  }
 }

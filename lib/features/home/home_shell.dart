@@ -13,6 +13,7 @@ import '../../market/market_data_service.dart';
 import '../../market/quote_repository.dart';
 import '../../sync/sync_engine.dart';
 import '../../trading/trading_engine.dart';
+import '../../trading/account_repository.dart';
 import '../discovery/discovery_tab.dart';
 import '../portfolio/portfolio_tab.dart';
 import '../sync/sync_dialog.dart';
@@ -40,6 +41,10 @@ class HomeShell extends StatefulWidget {
     required this.snapshots,
     required this.settings,
     required this.theme,
+    required this.accounts,
+    required this.accountId,
+    required this.accountName,
+    required this.onAccountChanged,
   });
 
   final AppDatabase database;
@@ -53,6 +58,10 @@ class HomeShell extends StatefulWidget {
   final EquitySnapshotRepository snapshots;
   final SettingsStore settings;
   final ThemeController theme;
+  final AccountRepository accounts;
+  final String accountId;
+  final String accountName;
+  final ValueChanged<String> onAccountChanged;
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -95,7 +104,10 @@ class _HomeShellState extends State<HomeShell> {
 
   void _deposit() {
     widget.ledger.append(
-      widget.ledger.deposit(amount: widget.settings.depositAmount),
+      widget.ledger.deposit(
+        amount: widget.settings.depositAmount,
+        accountId: widget.accountId,
+      ),
     );
     setState(() {});
   }
@@ -165,6 +177,7 @@ class _HomeShellState extends State<HomeShell> {
             _TopBar(
               journalMode: widget.database.journalMode,
               schemaVersion: widget.database.schemaVersion,
+              accountName: widget.accountName,
               pendingSync: widget.ledger.pendingCount(),
               syncOutcome: _syncOutcome,
               onSyncTap: _openSyncDialog,
@@ -190,6 +203,10 @@ class _HomeShellState extends State<HomeShell> {
                     onDeposit: _deposit,
                     settings: widget.settings,
                     theme: widget.theme,
+                    accounts: widget.accounts,
+                    accountId: widget.accountId,
+                    accountName: widget.accountName,
+                    onAccountChanged: widget.onAccountChanged,
                   ),
                   DiscoveryTab(
                     key: _discoveryKey,
@@ -219,6 +236,7 @@ class _TopBar extends StatelessWidget {
   const _TopBar({
     required this.journalMode,
     required this.schemaVersion,
+    required this.accountName,
     required this.pendingSync,
     required this.syncOutcome,
     required this.onSyncTap,
@@ -226,6 +244,7 @@ class _TopBar extends StatelessWidget {
 
   final String journalMode;
   final int schemaVersion;
+  final String accountName;
   final int pendingSync;
   final SyncOutcome? syncOutcome;
   final VoidCallback onSyncTap;
@@ -267,14 +286,59 @@ class _TopBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: AppSpacing.md),
-          Container(width: AppBorders.hairline, height: 16, color: hairline),
-          const SizedBox(width: AppSpacing.md),
-          Text(
-            'LEDGER v$schemaVersion  •  ${journalMode.toUpperCase()}',
-            style: AppTypography.mono(
-              size: 11,
-              color: AppColors.textMutedDark,
-              letterSpacing: 0.4,
+          if (MediaQuery.sizeOf(context).width >= 900) ...[
+            Container(width: AppBorders.hairline, height: 16, color: hairline),
+            const SizedBox(width: AppSpacing.md),
+            Text(
+              'LEDGER v$schemaVersion  •  ${journalMode.toUpperCase()}',
+              style: AppTypography.mono(
+                size: 11,
+                color: AppColors.textMutedDark,
+                letterSpacing: 0.4,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+          ] else
+            const SizedBox(width: AppSpacing.sm),
+          Flexible(
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.sm,
+                vertical: 2,
+              ),
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: AppColors.hairlineDark,
+                  width: AppBorders.hairline,
+                ),
+                borderRadius: AppRadii.smAll,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'PORTFOLIO',
+                    style: AppTypography.mono(
+                      size: 9,
+                      color: AppColors.textMutedDark,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  Flexible(
+                    child: Text(
+                      accountName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.mono(
+                        size: 11,
+                        weight: FontWeight.w600,
+                        color: AppColors.textSecondaryDark,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           if (MediaQuery.sizeOf(context).width >= 900) ...[

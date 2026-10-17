@@ -126,6 +126,7 @@ class _Device {
       orders: PendingOrderRepository(db),
       positions: PositionRepository(db),
       instruments: instruments,
+      accountId: 'default',
     );
     config = SyncConfigStore(db);
   }

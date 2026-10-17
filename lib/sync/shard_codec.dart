@@ -39,6 +39,7 @@ class ShardCodec {
         'event_id': event.eventId,
         'hlc': event.hlcTimestamp,
         'device': event.deviceId,
+        'account': event.accountId,
         'type': event.eventType,
         if (event.symbol != null) 'symbol': event.symbol,
         if (event.assetClass != null) 'asset_class': event.assetClass,
@@ -65,6 +66,7 @@ class ShardCodec {
       fee: (json['fee'] as num?)?.toDouble() ?? 0.0,
       currency: (json['currency'] as String?) ?? 'USD',
       synced: synced,
+      accountId: (json['account'] as String?) ?? 'default',
     );
   }
 

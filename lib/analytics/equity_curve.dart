@@ -54,6 +54,8 @@ class EquityCurve {
         case EventType.cashDeposit:
         case EventType.bondCoupon:
           cash += event.quantity;
+        case EventType.cashWithdrawal:
+          cash -= event.quantity;
         case EventType.buy:
         case EventType.sell:
           final symbol = event.symbol;

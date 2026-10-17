@@ -14,7 +14,7 @@ void main() {
     );
 
     expect(find.text('TUREIS'), findsOneWidget);
-    expect(find.text('ACCOUNT'), findsOneWidget);
+    expect(find.text('ACCOUNT • DEFAULT PORTFOLIO'), findsOneWidget);
     expect(find.text('NO OPEN POSITIONS'), findsOneWidget);
 
     await tester.tap(find.text('DEPOSIT CASH'));
@@ -40,5 +40,24 @@ void main() {
     final stack = tester.widget<IndexedStack>(find.byType(IndexedStack));
     expect(stack.index, 1);
     expect(find.textContaining('Search ticker'), findsOneWidget);
+  });
+
+  testWidgets('settings dialog exposes portfolios, funding and withdrawals',
+      (tester) async {
+    final db = AppDatabase.inMemory();
+    addTearDown(db.close);
+
+    await tester.pumpWidget(
+      PaperTradingApp(database: db, databasePath: ':memory:'),
+    );
+
+    await tester.tap(find.text('SETTINGS'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('PORTFOLIOS'), findsOneWidget);
+    expect(find.text('APPEARANCE'), findsOneWidget);
+    expect(find.text('CLEAR ALL CASH'), findsOneWidget);
+    expect(find.text('New portfolio name'), findsOneWidget);
+    expect(find.text('Default portfolio'), findsWidgets);
   });
 }

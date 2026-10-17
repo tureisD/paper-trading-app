@@ -11,13 +11,24 @@
 sections below are the original plan; this table records what actually landed
 and where the build deviated from it.
 
+This began as a weekend project: a synced, open alternative to apps like
+*BestBrokers* on the Play Store, built to experiment with the features I wanted
+most — the same portfolio on desktop and mobile, dense terminal-style tables,
+real European and Asian listings, limit/stop orders, and accounting that is
+actually correct.
+
+Additions beyond the original plan: **multiple named portfolios** (each with its
+own ledger slice, cash, positions and snapshots, all synced together), **cash
+withdrawals and "clear all cash"**, **dark/light themes**, and daily
+marked-to-market **equity snapshots** with a risk-free rate for Sharpe.
+
 | Phase | Planned | As built |
 | :--- | :--- | :--- |
 | **1** | Flutter/Tauri, SQLite + WAL, design tokens | ✅ Flutter 3.47, `package:sqlite3` 3.x (bundled via build hooks, no `sqlite3_flutter_libs`), Inter + JetBrains Mono, **zero plugins** |
 | **2** | Finnhub/Alpaca/Polygon, Binance, Yahoo, FRED, ECB, 50k FTS5 index | ✅ **Keyless-first**: Yahoo (stocks/ETFs/funds/indices), Binance REST **and WebSocket**, FRED, ECB. **~12,100 instruments** seeded in ~0.2 s (full NASDAQ Trader directory + curated EU/Asia/Americas + 26 indices). Keyed providers remain drop-in. |
 | **3** | Accounts, ledger, positions cache, pending orders, asset-specific rules | ✅ Schema v3 tables, WAC replay, market/limit/stop, fractional equity lots, crypto 1e-8 + 0.10% fee, fund `QUEUED_NAV`, bond clean→dirty settlement + idempotent coupons |
 | **4** | HLC stamping, Turso/Cloudflare/Gist, status pill | ✅ **Gist-only by design.** HLC + UUIDv7, per-device monthly NDJSON shards, ETag conditional GET, shard-hash checkpoints, rate-limit auto-retry, DPAPI-encrypted token |
-| **5** | Summary header, holdings table, analytics drawer | ✅ Plus **sell-all / partial-sell / buy-more quick actions**, daily marked-to-market `equity_snapshots`, risk-free rate for Sharpe, **dark/light themes**, custom funding |
+| **5** | Summary header, holdings table, analytics drawer | ✅ Plus **sell-all / partial-sell / buy-more quick actions**, **multiple named portfolios**, **cash withdrawals**, daily marked-to-market `equity_snapshots`, risk-free rate for Sharpe, **dark/light themes**, custom funding |
 | **6** | Categorised search, split-pane detail sheet, order ticket | ✅ Split pane at ≥900 px, candlestick **and line** chart (click to toggle), dashed live-price line, per-window % change, `1W` hourly bars, expense ratios, computed YTM + modified duration, units⇄cash sizing |
 | **7** | Frame throttling, `.exe`/`.msix`, R8 `.apk`/`.aab` | ✅ `QuoteBatcher` coalesces ticks to one flush per frame (60/120 Hz), live Binance stream with reconnect, portable Windows release, release APK (R8) + obfuscated AAB. **MSIX skipped** (needs a signing certificate). |
 

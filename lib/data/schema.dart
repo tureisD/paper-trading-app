@@ -6,7 +6,7 @@ class Schema {
   const Schema._();
 
   /// Current schema version (== index of the last applied migration).
-  static const int version = 5;
+  static const int version = 6;
 
   /// Ordered migrations. `migrations[0]` takes the DB from v0 -> v1, etc.
   static const List<List<String>> migrations = <List<String>>[
@@ -15,6 +15,7 @@ class Schema {
     _v3,
     _v4,
     _v5,
+    _v6,
   ];
 
   /// v1 — append-only event ledger + FTS5 instrument index + sync bookkeeping.
@@ -172,5 +173,52 @@ class Schema {
     );
     ''',
     'ALTER TABLE ledger_events ADD COLUMN meta TEXT;',
+  ];
+
+  /// v6 — multiple portfolios: events and equity snapshots become account-scoped.
+  static const List<String> _v6 = <String>[
+    "ALTER TABLE ledger_events ADD COLUMN account_id TEXT NOT NULL DEFAULT 'default';",
+    'CREATE INDEX IF NOT EXISTS idx_ledger_account ON ledger_events(account_id);',
+    '''
+    CREATE TABLE IF NOT EXISTS equity_snapshots_v2 (
+        account_id      TEXT NOT NULL,
+        day             TEXT NOT NULL,
+        net_liquidation REAL NOT NULL,
+        cash            REAL NOT NULL,
+        market_value    REAL NOT NULL,
+        realised_pnl    REAL NOT NULL,
+        unrealised_pnl  REAL NOT NULL,
+        recorded_at     TEXT NOT NULL,
+        PRIMARY KEY (account_id, day)
+    );
+    ''',
+    '''
+    INSERT OR IGNORE INTO equity_snapshots_v2 (
+        account_id, day, net_liquidation, cash, market_value, realised_pnl,
+        unrealised_pnl, recorded_at
+    ) SELECT 'default', day, net_liquidation, cash, market_value, realised_pnl,
+             unrealised_pnl, recorded_at
+      FROM equity_snapshots;
+    ''',
+    'DROP TABLE IF EXISTS equity_snapshots;',
+    'ALTER TABLE equity_snapshots_v2 RENAME TO equity_snapshots;',
+    '''
+    CREATE TABLE IF NOT EXISTS bond_coupon_credits_v2 (
+        account_id  TEXT NOT NULL,
+        symbol      TEXT NOT NULL,
+        coupon_date TEXT NOT NULL,
+        event_id    TEXT NOT NULL,
+        credited_at TEXT NOT NULL,
+        PRIMARY KEY (account_id, symbol, coupon_date)
+    );
+    ''',
+    '''
+    INSERT OR IGNORE INTO bond_coupon_credits_v2 (
+        account_id, symbol, coupon_date, event_id, credited_at
+    ) SELECT 'default', symbol, coupon_date, event_id, credited_at
+      FROM bond_coupon_credits;
+    ''',
+    'DROP TABLE IF EXISTS bond_coupon_credits;',
+    'ALTER TABLE bond_coupon_credits_v2 RENAME TO bond_coupon_credits;',
   ];
 }
