@@ -1,4 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Market data and GitHub Gist sync need the network on release builds;
+         Flutter only adds this automatically to debug/profile manifests. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="TureisBanking"
         android:name="${applicationName}"

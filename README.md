@@ -87,8 +87,11 @@ Grab the latest build from the
 | Asset | Notes |
 | :--- | :--- |
 | `TureisBanking-*-windows-x64-portable.zip` | Unzip anywhere and run `TureisBanking.exe`. No installer. |
-| `TureisBanking-*-android-universal.apk` | Sideload (enable "install unknown apps"). |
-| `TureisBanking-*-android.aab` | For Play Store upload. |
+| `TureisBanking-*-android-arm64-v8a.apk` | **Recommended**, ~20 MB. |
+| `TureisBanking-*-android-armeabi-v7a.apk` | Older 32-bit devices, ~17 MB. |
+| `TureisBanking-*-android-x86_64.apk` | Emulators and x86 tablets, ~21 MB. |
+| `TureisBanking-*-android-universal.apk` | All ABIs in one file, ~55 MB. |
+| `TureisBanking-*-android.aab` | Play Store upload bundle. |
 
 Release Android builds are **debug-key signed**, so Android may warn when
 sideloading. Fine for personal use; add a keystore before distributing.

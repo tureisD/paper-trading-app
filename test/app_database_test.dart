@@ -3,10 +3,19 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:paper_trading_app/core/ids.dart';
 import 'package:paper_trading_app/data/app_database.dart';
+import 'package:paper_trading_app/data/app_paths.dart';
 import 'package:paper_trading_app/data/ledger_repository.dart';
 import 'package:paper_trading_app/data/schema.dart';
+import 'package:path/path.dart' as p;
 
 void main() {
+  group('AppPaths', () {
+    test('resolves a per-user database path', () {
+      final path = AppPaths.databasePath();
+      expect(p.basename(path), 'paper_trading.db');
+      expect(Directory(p.dirname(path)).existsSync(), isTrue);
+    });
+  });
   group('AppDatabase', () {
     late Directory dir;
     late AppDatabase db;
