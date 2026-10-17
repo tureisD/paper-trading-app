@@ -4,7 +4,8 @@ enum AssetClass {
   etf('ETF', 'ETFs'),
   fund('FUND', 'Funds'),
   crypto('CRYPTO', 'Crypto'),
-  bond('BOND', 'Bonds');
+  bond('BOND', 'Bonds'),
+  marketIndex('INDEX', 'Indices');
 
   const AssetClass(this.wire, this.label);
 

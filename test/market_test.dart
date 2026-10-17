@@ -248,23 +248,35 @@ void main() {
       expect(payload.bondDetails.containsKey('AAPL'), isFalse);
     });
 
-    test('the bundled catalog covers every asset class', () async {
+    test('the bundled catalogs cover every asset class', () async {
       TestWidgetsFlutterBinding.ensureInitialized();
-      final raw = await rootBundle.loadString(CatalogImporter.assetPath);
-      final payload = CatalogImporter.parse(raw);
 
-      expect(payload.instruments.length, greaterThan(50));
+      final instruments = <Instrument>[];
+      var version = 0;
+      for (final path in CatalogImporter.assetPaths) {
+        final payload =
+            CatalogImporter.parse(await rootBundle.loadString(path));
+        instruments.addAll(payload.instruments);
+        if (payload.version > version) version = payload.version;
+      }
+
+      // Curated + US symbol directory + international listings.
+      expect(instruments.length, greaterThan(5000));
       expect(
-        payload.instruments.map((e) => e.assetClass).toSet(),
+        instruments.map((e) => e.assetClass).toSet(),
         containsAll(AssetClass.values),
       );
-      expect(payload.version, greaterThanOrEqualTo(2));
+      expect(version, greaterThanOrEqualTo(2));
+
+      // Curated products carry cost data the bulk lists do not.
       expect(
-        payload.instruments
-            .where((i) => i.assetClass == AssetClass.etf)
-            .every((i) => i.expenseRatio != null),
+        instruments.where((i) => i.expenseRatio != null),
+        isNotEmpty,
+      );
+      // Every entry must route somewhere.
+      expect(
+        instruments.every((i) => i.provider != null && i.providerSymbol != null),
         isTrue,
-        reason: 'ETFs should carry an expense ratio for the detail sheet',
       );
     });
 

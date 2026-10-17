@@ -4,45 +4,37 @@ import 'tokens.dart';
 
 /// Builds the Material [ThemeData] from the design tokens.
 ///
-/// Both themes share geometry (hairlines, tight radii, no elevation) and differ
-/// only in surface/text colours.
+/// Surface/text colours come from the active [AppColors.palette], so the widget
+/// layer only ever reads tokens and both appearances share the same geometry
+/// (hairlines, tight radii, no elevation).
 class AppTheme {
   const AppTheme._();
 
   static ThemeData dark() => _build(
         brightness: Brightness.dark,
-        background: AppColors.carbon,
-        surface: AppColors.panelDark,
-        hairline: AppColors.hairlineDark,
-        textPrimary: AppColors.textPrimaryDark,
-        textSecondary: AppColors.textSecondaryDark,
+        palette: AppPalette.dark,
+        accent: AppColors.focus,
       );
 
   static ThemeData light() => _build(
         brightness: Brightness.light,
-        background: AppColors.paper,
-        surface: AppColors.panelLight,
-        hairline: AppColors.hairlineLight,
-        textPrimary: AppColors.textPrimaryLight,
-        textSecondary: AppColors.textSecondaryLight,
+        palette: AppPalette.light,
+        accent: AppColors.focus,
       );
 
   static ThemeData _build({
     required Brightness brightness,
-    required Color background,
-    required Color surface,
-    required Color hairline,
-    required Color textPrimary,
-    required Color textSecondary,
+    required AppPalette palette,
+    required Color accent,
   }) {
     final scheme = ColorScheme.fromSeed(
-      seedColor: AppColors.focus,
+      seedColor: accent,
       brightness: brightness,
     ).copyWith(
-      surface: surface,
-      onSurface: textPrimary,
-      onSurfaceVariant: textSecondary,
-      outline: hairline,
+      surface: palette.panel,
+      onSurface: palette.textPrimary,
+      onSurfaceVariant: palette.textSecondary,
+      outline: palette.hairline,
       error: AppColors.negative,
     );
 
@@ -50,9 +42,9 @@ class AppTheme {
       useMaterial3: true,
       brightness: brightness,
       colorScheme: scheme,
-      scaffoldBackgroundColor: background,
+      scaffoldBackgroundColor: palette.carbon,
       fontFamily: AppTypography.uiFamily,
-      dividerColor: hairline,
+      dividerColor: palette.hairline,
       // No ink splashes / ripples: brutalist terminal feel.
       splashFactory: NoSplash.splashFactory,
       highlightColor: Colors.transparent,
@@ -61,23 +53,26 @@ class AppTheme {
 
     return base.copyWith(
       dividerTheme: DividerThemeData(
-        color: hairline,
+        color: palette.hairline,
         thickness: AppBorders.hairline,
         space: AppBorders.hairline,
       ),
-      iconTheme: IconThemeData(color: textSecondary, size: 16),
+      iconTheme: IconThemeData(color: palette.textSecondary, size: 16),
       textTheme: base.textTheme.apply(
         fontFamily: AppTypography.uiFamily,
-        bodyColor: textPrimary,
-        displayColor: textPrimary,
+        bodyColor: palette.textPrimary,
+        displayColor: palette.textPrimary,
       ),
       tooltipTheme: TooltipThemeData(
         decoration: BoxDecoration(
-          color: AppColors.raisedDark,
-          border: Border.all(color: hairline, width: AppBorders.hairline),
+          color: palette.raised,
+          border: Border.all(
+            color: palette.hairline,
+            width: AppBorders.hairline,
+          ),
           borderRadius: AppRadii.smAll,
         ),
-        textStyle: AppTypography.ui(size: 11, color: textPrimary),
+        textStyle: AppTypography.ui(size: 11, color: palette.textPrimary),
       ),
     );
   }

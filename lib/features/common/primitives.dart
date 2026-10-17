@@ -108,24 +108,25 @@ class GhostButton extends StatelessWidget {
     super.key,
     required this.label,
     required this.onPressed,
-    this.accent = AppColors.textSecondaryDark,
+    this.accent,
   });
 
   final String label;
   final VoidCallback onPressed;
-  final Color accent;
+  final Color? accent;
 
   @override
   Widget build(BuildContext context) {
+    final colour = accent ?? AppColors.textSecondaryDark;
     return TextButton(
       onPressed: onPressed,
       style: TextButton.styleFrom(
         minimumSize: const Size(0, 22),
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        foregroundColor: accent,
+        foregroundColor: colour,
         shape: RoundedRectangleBorder(
-          side: BorderSide(color: accent, width: AppBorders.hairline),
+          side: BorderSide(color: colour, width: AppBorders.hairline),
           borderRadius: AppRadii.smAll,
         ),
         textStyle: AppTypography.mono(

@@ -19,13 +19,13 @@ class InstrumentRepository {
     ON CONFLICT(symbol) DO UPDATE SET
       name = excluded.name,
       asset_class = excluded.asset_class,
-      exchange = excluded.exchange,
+      exchange = COALESCE(excluded.exchange, instruments.exchange),
       currency = excluded.currency,
-      isin = excluded.isin,
-      cusip = excluded.cusip,
-      provider = excluded.provider,
-      provider_symbol = excluded.provider_symbol,
-      expense_ratio = excluded.expense_ratio,
+      isin = COALESCE(excluded.isin, instruments.isin),
+      cusip = COALESCE(excluded.cusip, instruments.cusip),
+      provider = COALESCE(excluded.provider, instruments.provider),
+      provider_symbol = COALESCE(excluded.provider_symbol, instruments.provider_symbol),
+      expense_ratio = COALESCE(excluded.expense_ratio, instruments.expense_ratio),
       updated_at = excluded.updated_at;
   ''';
 
@@ -97,6 +97,60 @@ class InstrumentRepository {
     } catch (_) {
       _db.raw.execute('ROLLBACK;');
       rethrow;
+    }
+  }
+
+  /// Bulk load used by the catalog importer.
+  ///
+  /// Prepared statements, one transaction, FTS index rebuilt in place and
+  /// durability relaxed for the duration — this is what makes seeding ~12k
+  /// instruments fast on first launch.
+  void bulkUpsert(
+    Iterable<Instrument> instruments, {
+    Map<String, BondDetails> bondDetails = const {},
+  }) {
+    final now = DateTime.now().toUtc().toIso8601String();
+    final upsert = _db.raw.prepare(_upsertSql);
+    final ftsInsert = _db.raw.prepare(
+      'INSERT INTO instrument_search(symbol, name, isin, asset_class, exchange) '
+      'VALUES (?, ?, ?, ?, ?);',
+    );
+    final bondInsert = _db.raw.prepare(_upsertBondSql);
+
+    _db.raw.execute('PRAGMA synchronous = OFF;');
+    _db.raw.execute('BEGIN;');
+    try {
+      _db.raw.execute('DELETE FROM instrument_search;');
+      for (final instrument in instruments) {
+        upsert.execute(<Object?>[...instrument.toSqlParams(), now]);
+        ftsInsert.execute(<Object?>[
+          instrument.symbol,
+          instrument.name,
+          instrument.isin,
+          instrument.assetClass.wire,
+          instrument.exchange,
+        ]);
+        final bond = bondDetails[instrument.symbol];
+        if (bond != null) {
+          bondInsert.execute(<Object?>[
+            instrument.symbol,
+            bond.couponRate,
+            bond.maturityDate,
+            bond.parValue,
+            bond.couponFrequency,
+            bond.dayCount,
+          ]);
+        }
+      }
+      _db.raw.execute('COMMIT;');
+    } catch (_) {
+      _db.raw.execute('ROLLBACK;');
+      rethrow;
+    } finally {
+      upsert.close();
+      ftsInsert.close();
+      bondInsert.close();
+      _db.raw.execute('PRAGMA synchronous = NORMAL;');
     }
   }
 

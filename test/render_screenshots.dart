@@ -8,6 +8,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:paper_trading_app/analytics/equity_snapshot_repository.dart';
 import 'package:paper_trading_app/data/app_database.dart';
+import 'package:paper_trading_app/data/settings_store.dart';
+import 'package:paper_trading_app/design/theme_controller.dart';
 import 'package:paper_trading_app/data/ledger_repository.dart';
 import 'package:paper_trading_app/design/app_theme.dart';
 import 'package:paper_trading_app/features/home/home_shell.dart';
@@ -146,6 +148,12 @@ void main() {
       final syncConfig = SyncConfigStore(db);
       syncConfig.gistId = 'a1b2c3d4e5f6071829304b5c6d7e8f90';
 
+      final settings = SettingsStore(db);
+      final theme = ThemeController(settings);
+      if (Platform.environment['RENDER_THEME'] == 'light') {
+        theme.select(ThemeMode.light);
+      }
+
       final boundaryKey = GlobalKey();
       await tester.pumpWidget(
         RepaintBoundary(
@@ -173,6 +181,8 @@ void main() {
                 deviceId: 'windows_desktop',
               ),
               snapshots: EquitySnapshotRepository(db),
+              settings: settings,
+              theme: theme,
             ),
           ),
         ),
@@ -241,8 +251,22 @@ class _FakeProvider implements MarketDataProvider {
     required String symbol,
     required String providerSymbol,
     String currency = 'USD',
-  }) async =>
-      _quote(symbol, 412, previousClose: 408);
+  }) async {
+    const marks = <String, double>{
+      'AAPL': 210,
+      'MSFT': 412,
+      'SPY': 505,
+      'BTC-USD': 66000,
+    };
+    final price = marks[symbol] ?? 100;
+    return Quote.derive(
+      symbol: symbol,
+      price: price,
+      previousClose: price * 0.99,
+      source: 'screenshot',
+      asOf: DateTime.utc(2026, 10, 17),
+    );
+  }
 
   @override
   Future<List<Candle>> fetchCandles({

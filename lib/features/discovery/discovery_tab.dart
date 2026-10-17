@@ -41,16 +41,18 @@ class DiscoveryTab extends StatefulWidget {
   State<DiscoveryTab> createState() => DiscoveryTabState();
 }
 
-/// Chart windows available in the detail sheet.
+/// Chart windows available in the detail sheet. `1W` uses hourly bars.
 enum ChartRange {
-  oneMonth('1M', 22),
-  threeMonths('3M', 66),
-  sixMonths('6M', 130),
-  oneYear('1Y', 252);
+  oneWeek('1W', '1h', 40),
+  oneMonth('1M', '1d', 22),
+  threeMonths('3M', '1d', 66),
+  sixMonths('6M', '1d', 130),
+  oneYear('1Y', '1d', 252);
 
-  const ChartRange(this.label, this.sessions);
+  const ChartRange(this.label, this.interval, this.sessions);
 
   final String label;
+  final String interval;
   final int sessions;
 }
 
@@ -66,6 +68,7 @@ class DiscoveryTabState extends State<DiscoveryTab> {
 
   Instrument? _selected;
   ChartRange _range = ChartRange.threeMonths;
+  ChartStyle _chartStyle = ChartStyle.candles;
   final Map<String, List<Candle>> _candles = {};
   bool _loadingChart = false;
   String? _chartError;
@@ -173,7 +176,7 @@ class DiscoveryTabState extends State<DiscoveryTab> {
   }
 
   Future<void> _loadCandles(Instrument instrument, {bool force = false}) async {
-    final key = '${instrument.symbol}:${_range.sessions}';
+    final key = '${instrument.symbol}:${_range.interval}:${_range.sessions}';
     if (!force && _candles.containsKey(key)) return;
 
     setState(() {
@@ -183,7 +186,7 @@ class DiscoveryTabState extends State<DiscoveryTab> {
     try {
       final candles = await widget.marketData.candles(
         instrument,
-        interval: '1d',
+        interval: _range.interval,
         limit: _range.sessions,
       );
       if (!mounted) return;
@@ -377,7 +380,24 @@ class DiscoveryTabState extends State<DiscoveryTab> {
     }
 
     final quote = _quotes[instrument.symbol];
-    final candles = _candles['${instrument.symbol}:${_range.sessions}'] ?? const [];
+    final candles =
+        _candles['${instrument.symbol}:${_range.interval}:${_range.sessions}'] ??
+            const [];
+
+    // Change across the selected window, computed from the bars themselves.
+    double? rangeChange;
+    if (candles.length >= 2 && candles.first.close != 0) {
+      rangeChange = (candles.last.close - candles.first.close) /
+          candles.first.close *
+          100;
+    }
+    final rangeColour = rangeChange == null
+        ? AppColors.textMutedDark
+        : rangeChange > 0
+            ? AppColors.positive
+            : rangeChange < 0
+                ? AppColors.negative
+                : AppColors.textSecondaryDark;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(AppSpacing.lg),
@@ -401,6 +421,20 @@ class DiscoveryTabState extends State<DiscoveryTab> {
                       style: AppTypography.mono(
                         size: 9,
                         color: AppColors.textMutedDark,
+                      ),
+                    ),
+                  ),
+                if (rangeChange != null)
+                  Padding(
+                    padding: const EdgeInsets.only(right: AppSpacing.sm),
+                    child: Text(
+                      '${_range.label} '
+                      '${rangeChange > 0 ? '+' : ''}'
+                      '${rangeChange.toStringAsFixed(2)}%',
+                      style: AppTypography.mono(
+                        size: 10,
+                        weight: FontWeight.w700,
+                        color: rangeColour,
                       ),
                     ),
                   ),
@@ -435,6 +469,23 @@ class DiscoveryTabState extends State<DiscoveryTab> {
                 PriceChart(
                   candles: candles,
                   isYieldSeries: instrument.assetClass == AssetClass.bond,
+                  style: _chartStyle,
+                  currentPrice: quote?.price,
+                  onToggleStyle: () => setState(
+                    () => _chartStyle = _chartStyle.other,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  instrument.assetClass == AssetClass.bond
+                      ? 'YIELD SERIES — DASHED LINE MARKS THE LIVE LEVEL'
+                      : 'CLICK THE CHART TO SWITCH TO '
+                          '${_chartStyle.other.label} • DASHED LINE = LIVE LEVEL',
+                  style: AppTypography.mono(
+                    size: 9,
+                    color: AppColors.textMutedDark,
+                    letterSpacing: 0.4,
+                  ),
                 ),
               ],
             ),
@@ -577,6 +628,8 @@ class DiscoveryTabState extends State<DiscoveryTab> {
         }
       case AssetClass.bond:
         entries.addAll(_bondMetrics(instrument, quote));
+      case AssetClass.marketIndex:
+        break;
       case AssetClass.stock:
         break;
     }
@@ -719,7 +772,7 @@ class _SearchField extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.search, size: 15, color: AppColors.textMutedDark),
+          Icon(Icons.search, size: 15, color: AppColors.textMutedDark),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
             child: TextField(

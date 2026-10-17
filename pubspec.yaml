@@ -72,6 +72,8 @@ flutter:
 
   assets:
     - assets/data/instruments.json
+    - assets/data/instruments_us.json
+    - assets/data/instruments_intl.json
 
   # To add assets to your application, add an assets section, like this:
   # assets:

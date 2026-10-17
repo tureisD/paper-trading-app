@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 5,
   "note": "Curated seed catalog. The schema and FTS5 index are sized for 50k+ instruments; this subset exercises every asset class and provider. Expand by appending entries (provider/providerSymbol route live data). Expense ratios are approximate published figures for seed purposes.",
   "instruments": [
     { "symbol": "AAPL",  "name": "Apple Inc.",                    "assetClass": "STOCK", "exchange": "NASDAQ", "isin": "US0378331005", "provider": "yahoo", "providerSymbol": "AAPL" },

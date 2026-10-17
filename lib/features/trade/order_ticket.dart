@@ -29,6 +29,8 @@ Future<TradeResult?> showOrderTicket(
   required MarketDataService marketData,
   required QuoteRepository quotes,
   required Instrument instrument,
+  OrderSide initialSide = OrderSide.buy,
+  double? initialQuantity,
 }) {
   return showDialog<TradeResult>(
     context: context,
@@ -43,6 +45,8 @@ Future<TradeResult?> showOrderTicket(
           marketData: marketData,
           quotes: quotes,
           instrument: instrument,
+          initialSide: initialSide,
+          initialQuantity: initialQuantity,
           onClose: () => Navigator.of(dialogContext).pop(),
         ),
       ),
@@ -61,6 +65,8 @@ class OrderTicket extends StatefulWidget {
     required this.instrument,
     this.onClose,
     this.onCompleted,
+    this.initialSide = OrderSide.buy,
+    this.initialQuantity,
   });
 
   final TradingEngine engine;
@@ -69,6 +75,10 @@ class OrderTicket extends StatefulWidget {
   final Instrument instrument;
   final VoidCallback? onClose;
   final void Function(TradeResult result)? onCompleted;
+
+  /// Pre-fills used by the holdings quick actions.
+  final OrderSide initialSide;
+  final double? initialQuantity;
 
   @override
   State<OrderTicket> createState() => _OrderTicketState();
@@ -94,6 +104,10 @@ class _OrderTicketState extends State<OrderTicket> {
   @override
   void initState() {
     super.initState();
+    _side = widget.initialSide;
+    if (widget.initialQuantity != null) {
+      _quantity.text = formatQuantity(widget.initialQuantity!);
+    }
     _quote = widget.quotes.get(widget.instrument.symbol);
     if (_quote == null) _loadQuote();
   }
@@ -653,3 +667,12 @@ double? resolveUnits({
 /// Exposed for tests: the minimum tradeable step for an instrument.
 double minimumStep(Instrument instrument) =>
     FeeModel.quantityStep(instrument.assetClass);
+
+/// Formats a quantity without trailing zeros (0.5000000 -> 0.5).
+String formatQuantity(double value) {
+  if (value == value.roundToDouble() && value.abs() < 1e12) {
+    return value.toStringAsFixed(0);
+  }
+  final text = value.toStringAsFixed(8);
+  return text.replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
+}

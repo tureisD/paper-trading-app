@@ -1,50 +1,98 @@
 import 'package:flutter/widgets.dart';
 
+/// The surface/text palette for one appearance.
+///
+/// Everything theme-dependent funnels through here, so flipping the palette
+/// restyles the whole app without touching every widget.
+class AppPalette {
+  const AppPalette({
+    required this.carbon,
+    required this.panel,
+    required this.raised,
+    required this.hairline,
+    required this.textPrimary,
+    required this.textSecondary,
+    required this.textMuted,
+    required this.neutral,
+  });
+
+  /// Page background.
+  final Color carbon;
+
+  /// Elevated panel background.
+  final Color panel;
+
+  /// Slightly raised header/row fill.
+  final Color raised;
+
+  /// 1px structural border.
+  final Color hairline;
+
+  final Color textPrimary;
+  final Color textSecondary;
+  final Color textMuted;
+
+  /// Structural slate that must not imply direction.
+  final Color neutral;
+
+  /// Matte carbon — the institutional dark terminal.
+  static const AppPalette dark = AppPalette(
+    carbon: Color(0xFF0D0E11),
+    panel: Color(0xFF13151A),
+    raised: Color(0xFF181B21),
+    hairline: Color(0xFF22252A),
+    textPrimary: Color(0xFFE6E8EB),
+    textSecondary: Color(0xFF9BA1A9),
+    textMuted: Color(0xFF6B7178),
+    neutral: Color(0xFF8A9199),
+  );
+
+  /// Crisp paper — the same layout on a light surface.
+  static const AppPalette light = AppPalette(
+    carbon: Color(0xFFF7F7F5),
+    panel: Color(0xFFFFFFFF),
+    raised: Color(0xFFF1F2F0),
+    hairline: Color(0xFFE2E4E9),
+    textPrimary: Color(0xFF15171A),
+    textSecondary: Color(0xFF5A6069),
+    textMuted: Color(0xFF8B929B),
+    neutral: Color(0xFF6B7178),
+  );
+}
+
 /// Institutional trading-terminal design tokens.
 ///
-/// Deliberately restrained: hairline borders instead of shadows, tabular
-/// numerals for anything numeric, and semantic colour reserved for P&L only.
-/// See roadmap section 1 ("Anti-Vibe-Code Specification").
+/// Surface/text tokens are palette-driven (see [AppPalette]); semantic accents
+/// are shared across themes. Deliberately restrained: hairline borders instead
+/// of shadows, tabular numerals for anything numeric, and colour reserved for
+/// direction (P&L, bids/asks).
 class AppColors {
   const AppColors._();
 
-  // ---- Dark surface (default) ----
-  /// Matte carbon primary background.
-  static const Color carbon = Color(0xFF0D0E11);
+  static AppPalette _palette = AppPalette.dark;
 
-  /// Elevated panel background.
-  static const Color panelDark = Color(0xFF13151A);
+  /// Switches the active palette. Callers must rebuild afterwards.
+  static void use(AppPalette palette) => _palette = palette;
 
-  /// Slightly raised row/header fill.
-  static const Color raisedDark = Color(0xFF181B21);
+  static AppPalette get palette => _palette;
 
-  /// 1px structural hairline border.
-  static const Color hairlineDark = Color(0xFF22252A);
+  // ---- Surface + text (theme-dependent) ----
+  static Color get carbon => _palette.carbon;
+  static Color get panelDark => _palette.panel;
+  static Color get raisedDark => _palette.raised;
+  static Color get hairlineDark => _palette.hairline;
+  static Color get textPrimaryDark => _palette.textPrimary;
+  static Color get textSecondaryDark => _palette.textSecondary;
+  static Color get textMutedDark => _palette.textMuted;
+  static Color get neutral => _palette.neutral;
 
-  static const Color textPrimaryDark = Color(0xFFE6E8EB);
-  static const Color textSecondaryDark = Color(0xFF9BA1A9);
-  static const Color textMutedDark = Color(0xFF6B7178);
+  // ---- Semantic accents (identical in both themes) ----
 
-  // ---- Light surface ----
-  /// Crisp paper primary background.
-  static const Color paper = Color(0xFFF7F7F5);
-  static const Color panelLight = Color(0xFFFFFFFF);
-  static const Color raisedLight = Color(0xFFF1F2F0);
-  static const Color hairlineLight = Color(0xFFE2E4E9);
-
-  static const Color textPrimaryLight = Color(0xFF15171A);
-  static const Color textSecondaryLight = Color(0xFF5A6069);
-  static const Color textMutedLight = Color(0xFF8B929B);
-
-  // ---- Semantic accents (P&L / bids / asks only) ----
   /// Muted emerald — strictly positive P&L and bids.
   static const Color positive = Color(0xFF10B981);
 
   /// Muted crimson — strictly negative P&L and asks.
   static const Color negative = Color(0xFFEF4444);
-
-  /// Structural slate for chrome that must not imply direction.
-  static const Color neutral = Color(0xFF8A9199);
 
   /// Amber — offline / queued sync state.
   static const Color warning = Color(0xFFD97706);

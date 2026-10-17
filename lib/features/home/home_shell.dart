@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 
 import '../../data/app_database.dart';
 import '../../data/ledger_repository.dart';
+import '../../data/settings_store.dart';
+import '../../design/theme_controller.dart';
 import '../../design/tokens.dart';
 import '../../analytics/equity_snapshot_repository.dart';
 import '../../market/instrument_repository.dart';
@@ -36,6 +38,8 @@ class HomeShell extends StatefulWidget {
     required this.engine,
     required this.syncEngine,
     required this.snapshots,
+    required this.settings,
+    required this.theme,
   });
 
   final AppDatabase database;
@@ -47,6 +51,8 @@ class HomeShell extends StatefulWidget {
   final TradingEngine engine;
   final SyncEngine syncEngine;
   final EquitySnapshotRepository snapshots;
+  final SettingsStore settings;
+  final ThemeController theme;
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -88,7 +94,9 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   void _deposit() {
-    widget.ledger.append(widget.ledger.deposit(amount: kDepositAmount));
+    widget.ledger.append(
+      widget.ledger.deposit(amount: widget.settings.depositAmount),
+    );
     setState(() {});
   }
 
@@ -180,6 +188,8 @@ class _HomeShellState extends State<HomeShell> {
                     onOpenSync: _openSyncDialog,
                     onSyncNow: _syncNow,
                     onDeposit: _deposit,
+                    settings: widget.settings,
+                    theme: widget.theme,
                   ),
                   DiscoveryTab(
                     key: _discoveryKey,

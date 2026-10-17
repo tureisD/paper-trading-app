@@ -6,6 +6,8 @@ import '../../analytics/portfolio_analytics.dart';
 import '../../analytics/trade_stats.dart';
 import '../../core/format.dart';
 import '../../data/ledger_repository.dart';
+import '../../data/settings_store.dart';
+import '../../design/theme_controller.dart';
 import '../../market/asset_class.dart';
 import '../../market/instrument_repository.dart';
 import '../../market/live_quotes.dart';
@@ -15,11 +17,15 @@ import '../../market/models/quote.dart';
 import '../../market/providers/market_data_provider.dart';
 import '../../market/quote_repository.dart';
 import '../../sync/sync_engine.dart';
+import '../../trading/order.dart';
+import '../../trading/fee_model.dart';
 import '../../trading/portfolio.dart';
 import '../../trading/portfolio_engine.dart';
 import '../../trading/trading_engine.dart';
 import '../../design/tokens.dart';
 import '../common/primitives.dart';
+import '../settings/settings_dialog.dart';
+import '../trade/order_ticket.dart';
 import 'equity_chart.dart';
 
 /// Tab 1 — account summary, holdings table and analytics (roadmap Phase 5).
@@ -40,6 +46,8 @@ class PortfolioTab extends StatefulWidget {
     required this.onOpenSync,
     required this.onSyncNow,
     required this.onDeposit,
+    required this.settings,
+    required this.theme,
   });
 
   final String databasePath;
@@ -56,6 +64,8 @@ class PortfolioTab extends StatefulWidget {
   final VoidCallback onOpenSync;
   final VoidCallback onSyncNow;
   final VoidCallback onDeposit;
+  final SettingsStore settings;
+  final ThemeController theme;
 
   @override
   State<PortfolioTab> createState() => _PortfolioTabState();
@@ -132,6 +142,72 @@ class _PortfolioTabState extends State<PortfolioTab> {
       bonds: bonds,
       netDeposits: widget.ledger.netDeposits(),
     );
+  }
+
+  /// Half of a position, snapped down to a valid lot size.
+  static double _halfPosition(HoldingView holding) {
+    final step = FeeModel.quantityStep(holding.assetClass);
+    final units = ((holding.quantity / 2) / step).floorToDouble();
+    return units <= 0 ? holding.quantity : units * step;
+  }
+
+  Future<void> _openSettings() async {
+    await showSettingsDialog(
+      context,
+      settings: widget.settings,
+      theme: widget.theme,
+      ledger: widget.ledger,
+      onChanged: () {
+        if (mounted) setState(() {});
+      },
+    );
+    if (mounted) setState(() {});
+  }
+
+  /// Quick trade from a holdings row: pre-fills side and size.
+  Future<void> _quickTrade(
+    HoldingView holding,
+    OrderSide side,
+    double? quantity,
+  ) async {
+    final instrument = widget.instruments.get(holding.symbol);
+    if (instrument == null) {
+      setState(() => _markError = 'No catalog entry for ${holding.symbol}');
+      return;
+    }
+    final result = await showOrderTicket(
+      context,
+      engine: widget.engine,
+      marketData: widget.marketData,
+      quotes: widget.quotes,
+      instrument: instrument,
+      initialSide: side,
+      initialQuantity: quantity,
+    );
+    if (!mounted) return;
+    setState(() {});
+    _recordSnapshot();
+    if (result != null) {
+      final message = result.isFilled
+          ? 'FILLED ${result.order.side.wire} '
+              '${formatQuantity(result.order.quantity)} ${instrument.symbol}'
+          : result.status.isWorking
+              ? '${result.order.side.wire} ${formatQuantity(result.order.quantity)} '
+                  '${instrument.symbol} resting'
+              : (result.rejectionReason ?? 'Order rejected');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.raisedDark,
+          content: Text(
+            message,
+            style: AppTypography.mono(
+              size: 12,
+              color: result.isRejected ? AppColors.negative : AppColors.textPrimaryDark,
+            ),
+          ),
+        ),
+      );
+    }
   }
 
   /// Upserts today's marked-to-market valuation so the equity curve grows into
@@ -219,6 +295,11 @@ class _PortfolioTabState extends State<PortfolioTab> {
           GhostButton(
             label: _marking ? 'MARKING…' : 'MARK TO MARKET',
             onPressed: _marking ? () {} : _markToMarket,
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          GhostButton(
+            label: 'SETTINGS',
+            onPressed: _openSettings,
           ),
         ],
       ),
@@ -319,7 +400,20 @@ class _PortfolioTabState extends State<PortfolioTab> {
               children: [
                 const _HoldingsHeader(),
                 for (final holding in analytics.holdings)
-                  _HoldingRow(holding: holding),
+                  _HoldingRow(
+                    holding: holding,
+                    onBuy: () => _quickTrade(holding, OrderSide.buy, 1),
+                    onSell: () => _quickTrade(
+                      holding,
+                      OrderSide.sell,
+                      _halfPosition(holding),
+                    ),
+                    onSellAll: () => _quickTrade(
+                      holding,
+                      OrderSide.sell,
+                      holding.quantity,
+                    ),
+                  ),
               ],
             ),
     );
@@ -571,7 +665,8 @@ class _HoldingsHeader extends StatelessWidget {
           _HeaderCell('MKT VALUE', 104),
           _HeaderCell('UNREAL \$', 96),
           _HeaderCell('UNREAL %', 76),
-          _HeaderCell('WT %', 60),
+          _HeaderCell('WT %', 70),
+          _HeaderCell('TRADE', 140),
         ],
       ),
     );
@@ -590,7 +685,10 @@ class _HeaderCell extends StatelessWidget {
       width: width,
       child: Text(
         label,
-        textAlign: label == 'SYMBOL' || label == 'ISIN' || label == 'CLASS'
+        textAlign: label == 'SYMBOL' ||
+                label == 'ISIN' ||
+                label == 'CLASS' ||
+                label == 'TRADE'
             ? TextAlign.left
             : TextAlign.right,
         style: AppTypography.label(AppColors.textMutedDark),
@@ -600,9 +698,17 @@ class _HeaderCell extends StatelessWidget {
 }
 
 class _HoldingRow extends StatelessWidget {
-  const _HoldingRow({required this.holding});
+  const _HoldingRow({
+    required this.holding,
+    required this.onBuy,
+    required this.onSell,
+    required this.onSellAll,
+  });
 
   final HoldingView holding;
+  final VoidCallback onBuy;
+  final VoidCallback onSell;
+  final VoidCallback onSellAll;
 
   @override
   Widget build(BuildContext context) {
@@ -669,7 +775,15 @@ class _HoldingRow extends StatelessWidget {
             76,
             color: pnlColour,
           ),
-          _num('${holding.weightPercent.toStringAsFixed(1)}%', 60),
+          _num('${holding.weightPercent.toStringAsFixed(1)}%', 70),
+          SizedBox(
+            width: 140,
+            child: _TradeActions(
+              onBuy: onBuy,
+              onSell: onSell,
+              onSellAll: onSellAll,
+            ),
+          ),
         ],
       ),
     );
@@ -694,6 +808,60 @@ class _HoldingRow extends StatelessWidget {
 // Allocation + range chips
 // ---------------------------------------------------------------------------
 
+class _TradeActions extends StatelessWidget {
+  const _TradeActions({
+    required this.onBuy,
+    required this.onSell,
+    required this.onSellAll,
+  });
+
+  final VoidCallback onBuy;
+  final VoidCallback onSell;
+  final VoidCallback onSellAll;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        _action('BUY', AppColors.positive, onBuy),
+        const SizedBox(width: AppSpacing.xs),
+        _action('SELL', AppColors.negative, onSell),
+        const SizedBox(width: AppSpacing.xs),
+        _action('ALL', AppColors.textSecondaryDark, onSellAll, tooltip: 'Sell all'),
+      ],
+    );
+  }
+
+  Widget _action(
+    String label,
+    Color colour,
+    VoidCallback onTap, {
+    String? tooltip,
+  }) {
+    final chip = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          border: Border.all(color: colour, width: AppBorders.hairline),
+          borderRadius: AppRadii.smAll,
+        ),
+        child: Text(
+          label,
+          style: AppTypography.mono(
+            size: 9,
+            weight: FontWeight.w700,
+            letterSpacing: 0.4,
+            color: colour,
+          ),
+        ),
+      ),
+    );
+    return tooltip == null ? chip : Tooltip(message: tooltip, child: chip);
+  }
+}
+
 class _AllocationBar extends StatelessWidget {
   const _AllocationBar({required this.allocation});
 
@@ -705,6 +873,7 @@ class _AllocationBar extends StatelessWidget {
     AssetClass.etf: Color(0xFF7C848C),
     AssetClass.fund: Color(0xFF5C646C),
     AssetClass.bond: Color(0xFF454C54),
+    AssetClass.marketIndex: Color(0xFF38414A),
     AssetClass.crypto: Color(0xFF2E343B),
   };
 

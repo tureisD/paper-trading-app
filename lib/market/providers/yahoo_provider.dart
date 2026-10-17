@@ -35,6 +35,7 @@ class YahooFinanceProvider implements MarketDataProvider {
         AssetClass.stock,
         AssetClass.etf,
         AssetClass.fund,
+        AssetClass.marketIndex,
       };
 
   @override
@@ -140,9 +141,8 @@ class YahooFinanceProvider implements MarketDataProvider {
   }
 
   static String _rangeFor(String interval, int limit) {
-    if (interval.endsWith('m')) {
-      return interval == '1m' ? '5d' : '1mo';
-    }
+    if (interval.endsWith('m')) return interval == '1m' ? '5d' : '1mo';
+    if (interval.endsWith('h')) return '5d';
     if (limit <= 7) return '5d';
     if (limit <= 30) return '1mo';
     if (limit <= 90) return '6mo';

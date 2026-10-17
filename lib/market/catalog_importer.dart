@@ -18,7 +18,17 @@ class CatalogPayload {
 class CatalogImporter {
   const CatalogImporter._();
 
+  /// Curated catalog: crypto, funds, bonds, indices, key ETFs (with expense
+  /// ratios) and a starter set of stocks.
   static const String assetPath = 'assets/data/instruments.json';
+
+  /// Everything seeded on first run. Bulk lists come first so the curated file
+  /// (which carries ISINs, exchange names and expense ratios) wins on conflicts.
+  static const List<String> assetPaths = <String>[
+    'assets/data/instruments_us.json',
+    'assets/data/instruments_intl.json',
+    assetPath,
+  ];
 
   /// Seeds or refreshes the catalog.
   ///
@@ -26,18 +36,37 @@ class CatalogImporter {
   /// than the one already imported — so existing installs pick up new fields
   /// (expense ratios, new instruments) without wiping local state.
   static Future<int> seedIfNeeded(InstrumentRepository repository) async {
-    final raw = await rootBundle.loadString(assetPath);
-    final payload = parse(raw);
-    final imported = repository.catalogVersion;
+    final payloads = <CatalogPayload>[];
+    for (final path in assetPaths) {
+      try {
+        payloads.add(parse(await rootBundle.loadString(path)));
+      } catch (_) {
+        // A missing optional bulk file must not block seeding.
+      }
+    }
+    if (payloads.isEmpty) return 0;
 
-    if (repository.count() > 0 && imported == '${payload.version}') return 0;
+    final version = payloads
+        .map((payload) => payload.version)
+        .reduce((a, b) => a > b ? a : b);
 
-    repository.upsertAll(
-      payload.instruments,
-      bondDetails: payload.bondDetails,
-    );
-    repository.catalogVersion = '${payload.version}';
-    return payload.instruments.length;
+    if (repository.count() > 0 && repository.catalogVersion == '$version') {
+      return 0;
+    }
+
+    var imported = 0;
+    final merged = <String, Instrument>{};
+    final bonds = <String, BondDetails>{};
+    for (final payload in payloads) {
+      for (final instrument in payload.instruments) {
+        merged[instrument.symbol] = instrument; // later files win
+      }
+      bonds.addAll(payload.bondDetails);
+      imported += payload.instruments.length;
+    }
+    repository.bulkUpsert(merged.values, bondDetails: bonds);
+    repository.catalogVersion = '$version';
+    return imported;
   }
 
   /// Parses the catalog JSON (pure function, unit-testable without Flutter).

@@ -47,6 +47,8 @@ class FeeModel {
         return 1e-3;
       case AssetClass.bond:
         return 1e-4;
+      case AssetClass.marketIndex:
+        return 1e-6;
     }
   }
 

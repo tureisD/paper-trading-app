@@ -1,7 +1,29 @@
 # High-Performance Multi-Asset Paper Trading App: Master Roadmap & Architecture
 
 **Target Platforms:** Windows (Native Desktop) & Android (Mobile)  
-**Core Philosophy:** Sub-millisecond local-first responsiveness, Swiss financial typography, zero "AI vibe-code" visual bloat, multi-asset support (Stocks, ETFs, Crypto, Mutual Funds, Bonds/Obligations), and $0 always-on cross-device synchronization.
+**Core Philosophy:** Sub-millisecond local-first responsiveness, Swiss financial typography, zero "AI vibe-code" visual bloat, multi-asset support (Stocks, ETFs, Crypto, Mutual Funds, Bonds/Obligations, Indices), and $0 always-on cross-device synchronization.
+
+---
+
+## Build status
+
+**All seven phases are implemented and shipping in this repository.** The
+sections below are the original plan; this table records what actually landed
+and where the build deviated from it.
+
+| Phase | Planned | As built |
+| :--- | :--- | :--- |
+| **1** | Flutter/Tauri, SQLite + WAL, design tokens | ✅ Flutter 3.47, `package:sqlite3` 3.x (bundled via build hooks, no `sqlite3_flutter_libs`), Inter + JetBrains Mono, **zero plugins** |
+| **2** | Finnhub/Alpaca/Polygon, Binance, Yahoo, FRED, ECB, 50k FTS5 index | ✅ **Keyless-first**: Yahoo (stocks/ETFs/funds/indices), Binance REST **and WebSocket**, FRED, ECB. **~12,100 instruments** seeded in ~0.2 s (full NASDAQ Trader directory + curated EU/Asia/Americas + 26 indices). Keyed providers remain drop-in. |
+| **3** | Accounts, ledger, positions cache, pending orders, asset-specific rules | ✅ Schema v3 tables, WAC replay, market/limit/stop, fractional equity lots, crypto 1e-8 + 0.10% fee, fund `QUEUED_NAV`, bond clean→dirty settlement + idempotent coupons |
+| **4** | HLC stamping, Turso/Cloudflare/Gist, status pill | ✅ **Gist-only by design.** HLC + UUIDv7, per-device monthly NDJSON shards, ETag conditional GET, shard-hash checkpoints, rate-limit auto-retry, DPAPI-encrypted token |
+| **5** | Summary header, holdings table, analytics drawer | ✅ Plus **sell-all / partial-sell / buy-more quick actions**, daily marked-to-market `equity_snapshots`, risk-free rate for Sharpe, **dark/light themes**, custom funding |
+| **6** | Categorised search, split-pane detail sheet, order ticket | ✅ Split pane at ≥900 px, candlestick **and line** chart (click to toggle), dashed live-price line, per-window % change, `1W` hourly bars, expense ratios, computed YTM + modified duration, units⇄cash sizing |
+| **7** | Frame throttling, `.exe`/`.msix`, R8 `.apk`/`.aab` | ✅ `QuoteBatcher` coalesces ticks to one flush per frame (60/120 Hz), live Binance stream with reconnect, portable Windows release, release APK (R8) + obfuscated AAB. **MSIX skipped** (needs a signing certificate). |
+
+**Deferred on purpose:** syncing resting orders (needs a cross-device cancel /
+partial-fill decision), keyed data providers (no keys supplied), and a licensed
+50k+ dataset. See the README's *Limitations* section.
 
 ---
 
@@ -22,6 +44,7 @@ To avoid the generic "AI-generated template" look, the UI adheres strictly to in
    - **Tab 2: Multi-Asset Discovery & Execution** (Instant local search across Stocks, Crypto, ETFs, Funds, and Bonds + rapid order ticket).
    - **Keyboard-First on Windows:** `Ctrl+1` (Tab 1), `Ctrl+2` (Tab 2), `/` (focus search immediately), `Enter` (open order ticket), `Esc` (dismiss modal).
    - **Thumb-First on Android:** Persistent bottom two-segment bar with zero transition animations ($0\text{ ms}$ tab switch).
+5. **Two Appearances, One Layout:** Matte carbon (dark) and crisp paper (light) are both shipping. Surface and text tokens are palette-driven (`AppPalette` in `lib/design/tokens.dart`) while semantic accents stay constant, so switching appearance never changes geometry or meaning.
 
 ---
 
@@ -86,7 +109,7 @@ Gists are generous but not infinite; the architecture is designed to stay far in
 
 ### 2.6 Authentication, Privacy & Security
 
-- **Token:** A **fine-grained PAT** with *Gists: Read and write* is preferred; a classic PAT restricted to only the `gist` scope also works. The token is stored in the **Windows Credential Manager** and **Android EncryptedSharedPreferences (Keystore-backed)** — never in SQLite, never in logs.
+- **Token:** A **fine-grained PAT** with *Gists: Read and write* is preferred; a classic PAT restricted to only the `gist` scope also works. In this build the token is encrypted at rest with **Windows DPAPI** (`CryptProtectData`, user-scoped) through `dart:ffi` before it is written to SQLite — no plugin, and only the same Windows user can decrypt it. On Android the equivalent would be the Keystore.
 - **Bootstrap:** Device A creates the secret gist and stores its ID; Device B is linked by entering the same **gist ID + PAT** (no OAuth flow, no server).
 - **Privacy posture:** A secret gist is *unlisted*, not *encrypted* — GitHub (and anyone holding the ID plus a valid token) can read it. For stronger privacy, shard files can hold **AES-256-GCM ciphertext** with a key derived from a user passphrase (Argon2id). Trade-off: encrypted shards are not human-readable and cannot be diffed in the gist UI.
 
