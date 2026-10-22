@@ -1,40 +1,67 @@
-# TureisBanking
-
-A **local-first paper trading terminal** for **Windows and Android** — a synced,
-open alternative to apps like *BestBrokers*.
-
-Trade ~12,100 stocks, ETFs, funds, crypto, bonds and indices with simulated money
-across US, European, Asian and Latin American markets, while your portfolio syncs
-between your devices for free through a GitHub Gist.
-
-No backend · no sign-up · no subscription · your data stays yours · **it never
-touches a real market**.
-
 <p align="center">
-  <img src="docs/screenshot-portfolio-dark.png" width="49%" alt="Portfolio tab on desktop (dark)" />
-  <img src="docs/screenshot-discovery.png" width="49%" alt="Discovery tab: search, chart and order ticket" />
+  <img src="docs/banner.png" alt="TureisBanking — local-first paper trading terminal" width="100%">
 </p>
+
 <p align="center">
-  <img src="docs/screenshot-android-portfolio.png" width="24%" alt="Portfolio on Android" />
-  <img src="docs/screenshot-android-ticket.png" width="24%" alt="Order ticket on Android" />
-  <img src="docs/screenshot-portfolio-light.png" width="49%" alt="Portfolio tab in the light theme" />
+  <a href="https://github.com/tureisD/paper-trading-app/releases"><img alt="Release" src="https://img.shields.io/badge/release-v1.0.0-10B981?style=flat-square&labelColor=16181D"></a>
+  <img alt="Platforms" src="https://img.shields.io/badge/platform-Windows%20%7C%20Android-4B5563?style=flat-square&labelColor=16181D">
+  <img alt="Flutter" src="https://img.shields.io/badge/Flutter-3.47-02569B?style=flat-square&logo=flutter&logoColor=white&labelColor=16181D">
+  <img alt="SQLite" src="https://img.shields.io/badge/storage-SQLite-003B57?style=flat-square&logo=sqlite&logoColor=white&labelColor=16181D">
+  <img alt="Sync" src="https://img.shields.io/badge/sync-GitHub%20Gist-6E40C9?style=flat-square&logo=github&logoColor=white&labelColor=16181D">
+  <img alt="Cost" src="https://img.shields.io/badge/cost-%240-10B981?style=flat-square&labelColor=16181D">
+</p>
+
+<h3 align="center">A local-first paper trading terminal for Windows&nbsp;and&nbsp;Android</h3>
+
+<p align="center">
+  <em>Twelve thousand instruments, real market data, your own append-only ledger —
+  synced between your devices for free through a GitHub Gist you own.</em>
+</p>
+
+<p align="center">
+  <sub>No backend · no sign-up · no subscription · your data stays yours · it never touches a real market</sub>
 </p>
 
 ---
 
+|  |  |
+| :--- | :--- |
+| **Instruments** | ~12,100 — US, Europe, Asia and the Americas, plus 26 global indices |
+| **Asset classes** | Stocks · ETFs · Mutual funds · Crypto · Bonds · Indices |
+| **Platforms** | Windows 10/11 (x64) · Android |
+| **Market data** | Yahoo · Binance · FRED · ECB — **no API keys** |
+| **Storage** | SQLite, append-only ledger, state derived by replay |
+| **Sync** | Your own secret GitHub Gist — free forever, conflict-free |
+| **Footprint** | 11 MB installer · ~31 MB installed |
+| **Cost** | $0. No account, no server, nothing to renew |
+
+---
+
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshot-portfolio-dark.png" width="49%" alt="Portfolio tab on desktop (dark)">
+  <img src="docs/screenshot-discovery.png" width="49%" alt="Discovery tab: search, chart and order ticket">
+</p>
+<p align="center">
+  <img src="docs/screenshot-android-portfolio.png" width="23%" alt="Portfolio on Android">
+  <img src="docs/screenshot-android-ticket.png" width="23%" alt="Order ticket on Android">
+  <img src="docs/screenshot-portfolio-light.png" width="49%" alt="Portfolio tab in the light theme">
+</p>
+
 ## Why this exists
 
 I use **BestBrokers** on Android for paper trading and like it, but kept running
-into small annoyances: I wanted the same portfolio on my PC *and* my phone, a
-dense table that reads like a real terminal instead of a phone app stretched
-across a monitor, real European and Asian listings (not just US tickers), a proper
-order ticket with limit/stop orders, and analytics that are actually correct —
+into small annoyances: I wanted the same portfolio on my PC *and* my phone, a dense
+table that reads like a real terminal instead of a phone app stretched across a
+monitor, real European and Asian listings (not just US tickers), a proper order
+ticket with limit/stop orders, and analytics that are actually correct —
 weighted-average cost, Sharpe, max drawdown, bond dirty pricing.
 
-So this started as a **weekend project** to experiment with those things and
-improve the basic features and quality of life: a free, synced broker simulator
-you own end to end. It grew a little past the weekend, but the goal never
-changed — keep it small, local-first, and honest about its numbers.
+So this started as a **weekend project** to experiment with those things and improve
+the basics: a free, synced broker simulator you own end to end. It grew a little
+past the weekend, but the goal never changed — keep it small, local-first, and
+honest about its numbers.
 
 ## Install
 
@@ -49,23 +76,28 @@ Grab the latest build from [**Releases**](https://github.com/tureisD/paper-tradi
 | `TureisBanking-*-android-universal.apk` | Any Android device | ~55 MB, all ABIs. |
 | `TureisBanking-*-android.aab` | Play Store upload | |
 
-First launch seeds the instrument catalogue (about 12,000 rows, ~0.2 s) and opens
-a portfolio with **$100,000** of simulated cash. Release Android builds are
-debug-key signed, so Android will warn when sideloading — fine for personal use.
+First launch seeds the instrument catalogue (about 12,000 rows, ~0.2 s) and opens a
+portfolio with **$100,000** of simulated cash.
 
-## The 30-second tour
+> [!NOTE]
+> Android release builds are debug-key signed, so Android will warn when
+> sideloading. That is fine for personal use — add your own keystore before
+> distributing.
 
-1. **Portfolio** — net liquidation value, day and total P&L, holdings, equity
-   curve, risk metrics. Hit **RELOAD** (or `F5`) to pull fresh prices for
-   everything you hold.
-2. **Discovery** — search 12,000 instruments offline, inspect the chart and
-   metrics, and trade from the split pane.
+### The 30-second tour
+
+1. **Portfolio** — net liquidation value, day and total P&L, holdings, equity curve
+   and risk metrics. Hit **RELOAD** (or `F5`) to pull fresh prices for everything
+   you hold.
+2. **Discovery** — search 12,000 instruments offline, inspect the chart and metrics,
+   and trade from the split pane.
 3. **Settings** — themes, multiple named portfolios, add or remove cash.
 
 ---
 
 <details>
-<summary><b>✨ Feature list</b></summary>
+<summary><b>✨ &nbsp;Feature list</b></summary>
+<br>
 
 ### Trading
 
@@ -76,11 +108,11 @@ debug-key signed, so Android will warn when sideloading — fine for personal us
   history — all synced together.
 - **Cash in and out** — deposit, withdraw a specific amount, or clear all cash.
 - **Asset-correct execution**
-  - Equities/ETFs: market, limit and stop orders, fractional quantities,
+  - *Equities/ETFs* — market, limit and stop orders, fractional quantities,
     simulated bid/ask spread.
-  - Crypto: 24/7, 1e-8 precision, 0.10% maker/taker fee.
-  - Funds: intraday orders queue as `QUEUED_NAV` and settle at the next EOD NAV.
-  - Bonds: quoted clean, settled at dirty price, coupons credited automatically
+  - *Crypto* — 24/7, 1e-8 precision, 0.10% maker/taker fee.
+  - *Funds* — intraday orders queue as `QUEUED_NAV` and settle at the next EOD NAV.
+  - *Bonds* — quoted clean, settled at dirty price, coupons credited automatically
     and exactly once.
 - **Quick actions** — `BUY` / `SELL` (half, snapped to lot size) / `ALL` on every
   holdings row.
@@ -88,12 +120,12 @@ debug-key signed, so Android will warn when sideloading — fine for personal us
 ### Data
 
 - **Keyless market data** — Yahoo Finance (stocks/ETFs/funds/indices), Binance
-  (REST **and** a live WebSocket stream), FRED (US Treasury yields), ECB
-  (euro-area yields).
-- **Live streaming with frame coalescing** — ticks are buffered and flushed at
-  most once per frame (60 Hz, or 120 Hz), so a fast stream can't block the UI.
-- **On-command reload** — fetch fresh prices for everything held and recompute
-  every derived number (`RELOAD` or `F5`).
+  (REST **and** a live WebSocket stream), FRED (US Treasury yields), ECB (euro-area
+  yields).
+- **Live streaming with frame coalescing** — ticks are buffered and flushed at most
+  once per frame (60 Hz, or 120 Hz), so a fast stream can't block the UI.
+- **On-command reload** — fetch fresh prices for everything held and recompute every
+  derived number (`RELOAD` or `F5`).
 
 ### Analytics
 
@@ -121,7 +153,8 @@ debug-key signed, so Android will warn when sideloading — fine for personal us
 </details>
 
 <details>
-<summary><b>🖥️ Using the app</b></summary>
+<summary><b>🖥️ &nbsp;Using the app</b></summary>
+<br>
 
 ### Tab 1 — Portfolio
 
@@ -137,21 +170,21 @@ debug-key signed, so Android will warn when sideloading — fine for personal us
 ### Tab 2 — Discovery
 
 - **Search** tickers, names or ISINs instantly, offline.
-- **Category pills**: All / Stocks / ETFs / Funds / Crypto / Bonds / Indices.
-- **Detail sheet** (split pane on wide screens) — price header, history chart,
-  asset metrics, order ticket.
+- **Category pills** — All / Stocks / ETFs / Funds / Crypto / Bonds / Indices.
+- **Detail sheet** (split pane on wide screens) — price header, history chart, asset
+  metrics, order ticket.
 - **Chart** — candlesticks with volume or a line; **click the chart to toggle**. A
   dashed line marks the live price and the header shows the change across the
   selected window (`1W` uses hourly bars).
 - **Metrics adapt to the asset class** — expense ratio for ETFs/funds, 24h
-  high/low/volume for crypto, and yield, coupon, maturity, computed YTM and
-  modified duration for bonds.
+  high/low/volume for crypto, and yield, coupon, maturity, computed YTM and modified
+  duration for bonds.
 
 ### Order ticket
 
 Buy/sell · market, limit or stop · sized in **units or cash**. Market orders fill
-immediately; limit and stop orders rest locally and are re-evaluated on every
-quote update; fund orders queue for the next end-of-day NAV.
+immediately; limit and stop orders rest locally and are re-evaluated on every quote
+update; fund orders queue for the next end-of-day NAV.
 
 ### Settings
 
@@ -175,33 +208,32 @@ quote update; fund orders queue for the next end-of-day NAV.
 </details>
 
 <details>
-<summary><b>🔄 Cross-device sync</b></summary>
+<summary><b>🔄 &nbsp;Cross-device sync</b></summary>
+<br>
 
 Portfolio history syncs through **one secret GitHub Gist that you own**.
 
 ### Setup
 
-1. Create a token with the **`gist`** scope (classic PAT), or the **Gists: read
-   and write** account permission (fine-grained PAT).
-2. In the app, click the status pill (top right) or **SYNC (GIST VAULT) →
-   SETUP / SYNC**.
-3. Paste the token, **leave the gist id blank** to create a vault, then
-   **CONNECT & SYNC**. The pill turns green: `SYNCED • GIST • 12ms`.
+1. Create a token with the **`gist`** scope (classic PAT), or the **Gists: read and
+   write** account permission (fine-grained PAT).
+2. In the app, click the status pill (top right) or **SYNC (GIST VAULT) → SETUP /
+   SYNC**.
+3. Paste the token, **leave the gist id blank** to create a vault, then **CONNECT &
+   SYNC**. The pill turns green: `SYNCED • GIST • 12ms`.
 4. On a second device, paste the same token and **the gist id from step 3**.
 
 ### How it works
 
-- Only **events** travel. Balances, cost basis and P&L are recomputed locally, so
-  two devices can never disagree about state.
+- Only **events** travel. Balances, cost basis and P&L are recomputed locally, so two
+  devices can never disagree about state.
 - Every event carries a **UUIDv7** id and a **Hybrid Logical Clock** stamp, which
   stays monotonic even if device clocks disagree.
-- Each device writes **only its own monthly shard**
-  (`ledger.<device>.<yyyy-MM>.ndjson`), so devices cannot overwrite each other and
-  no file grows without bound.
-- All portfolios live in the same vault; `account_id` on each event keeps them
-  apart.
-- Pulls are conditional (`If-None-Match`); a `304` costs **zero** rate-limit
-  budget and unchanged shards are skipped by content hash.
+- Each device writes **only its own monthly shard** (`ledger.<device>.<yyyy-MM>.ndjson`),
+  so devices cannot overwrite each other and no file grows without bound.
+- All portfolios live in the same vault; `account_id` on each event keeps them apart.
+- Pulls are conditional (`If-None-Match`); a `304` costs **zero** rate-limit budget
+  and unchanged shards are skipped by content hash.
 - Rate limits are respected automatically (`Retry-After` / `x-ratelimit-reset`).
 - The token is encrypted at rest with **Windows DPAPI** (user-scoped).
 - Resting limit/stop orders stay **device-local**; only fills sync.
@@ -209,7 +241,7 @@ Portfolio history syncs through **one secret GitHub Gist that you own**.
 ### When it says no
 
 The app verifies the token before touching the vault, so it can tell you what is
-actually wrong:
+actually wrong.
 
 | Message | Meaning |
 | :--- | :--- |
@@ -219,14 +251,16 @@ actually wrong:
 | `returned 404` | Wrong gist id, or a fine-grained token without the Gists permission. |
 | `OFFLINE • QUEUED (n)` | Rate limited or offline; it retries automatically. |
 
-Pasted whitespace, non-breaking spaces, zero-width characters and smart quotes are
-stripped before the token is ever sent — they are the usual cause of a 401 from a
-token that looks correct.
+> [!TIP]
+> Pasted whitespace, non-breaking spaces, zero-width characters and smart quotes are
+> stripped before the token is ever sent — they are the usual cause of a 401 from a
+> token that looks correct.
 
 </details>
 
 <details>
-<summary><b>📈 Market data</b></summary>
+<summary><b>📈 &nbsp;Market data</b></summary>
+<br>
 
 All providers are keyless. Quotes are display data — never ledger data — and are
 never synced.
@@ -234,17 +268,18 @@ never synced.
 | Asset class | Provider | Source |
 | :--- | :--- | :--- |
 | Stocks, ETFs, Funds, Indices | `yahoo` | `query1.finance.yahoo.com` chart API |
-| Crypto | `binance` | REST (`api.binance.com`, `data-api.binance.vision` mirror) + WebSocket |
+| Crypto | `binance` | REST (`api.binance.com`, `api.binance.vision` mirror) + WebSocket |
 | US Treasury yields | `fred` | `fred.stlouisfed.org/graph/fredgraph.csv` |
 | Euro-area yields | `ecb` | `data-api.ecb.europa.eu` (SDMX CSV) |
 
-Adding a keyed provider (Finnhub, Alpaca, Polygon, Twelve Data) means implementing
-one interface and registering it — the UI does not change.
+Adding a keyed provider (Finnhub, Alpaca, Polygon, Twelve Data) means implementing one
+interface and registering it — the UI does not change.
 
 </details>
 
 <details>
-<summary><b>🏗️ How it's built</b></summary>
+<summary><b>🏗️ &nbsp;How it's built</b></summary>
+<br>
 
 ### Stack
 
@@ -281,10 +316,10 @@ The portfolio is an **append-only ledger of events**:
 CASH_DEPOSIT · CASH_WITHDRAWAL · BUY · SELL · BOND_COUPON
 ```
 
-`PortfolioEngine.replay` folds that log into cash, positions (Weighted Average
-Cost) and realised P&L. `positions_cache` is a disposable materialisation of that
-fold; delete it and nothing is lost. That is what makes sync easy — there is no
-state to merge, only events to insert once.
+`PortfolioEngine.replay` folds that log into cash, positions (Weighted Average Cost)
+and realised P&L. `positions_cache` is a disposable materialisation of that fold;
+delete it and nothing is lost. That is what makes sync easy — there is no state to
+merge, only events to insert once.
 
 ### Schema (SQLite, migrated forward via `PRAGMA user_version`)
 
@@ -303,18 +338,18 @@ state to merge, only events to insert once.
 
 ### Decisions worth calling out
 
-- **Replay over mutation** — identical state on any device, no conflict
-  resolution, no merge UI.
-- **Zero plugins** — everything is Dart or `dart:ffi`, so Windows Developer Mode
-  is never required and the token goes straight to DPAPI.
-- **Shard per device per month** — removes write contention and gives rotation
-  for free.
+- **Replay over mutation** — identical state on any device, no conflict resolution,
+  no merge UI.
+- **Zero plugins** — everything is Dart or `dart:ffi`, so Windows Developer Mode is
+  never required and the token goes straight to DPAPI.
+- **Shard per device per month** — removes write contention and gives rotation for
+  free.
 - **UTC-stable dates** — `DateTime.parse('2030-01-15')` is *local* and shifts by a
   day; every schedule goes through `parseDateUtc`.
-- **Coalesced ticks** — one UI update, one cache write and one order-evaluation
-  pass per frame (60/120 Hz).
-- **Bulk seeding** — prepared statements in a single transaction: 12k instruments
-  in ~0.2 s instead of ~15 s.
+- **Coalesced ticks** — one UI update, one cache write and one order-evaluation pass
+  per frame (60/120 Hz).
+- **Bulk seeding** — prepared statements in a single transaction: 12k instruments in
+  ~0.2 s instead of ~15 s.
 
 ### Footprint
 
@@ -330,17 +365,17 @@ That floor is the engine, not the app:
 | exe + uninstaller | 0.8 MB | Runner + uninstaller |
 
 The catalog is the part that is ours, so it is the part that got optimised: the
-instrument lists ship **gzipped and stripped of defaulted fields** (provider
-`yahoo`, currency `USD`, `providerSymbol` == symbol), taking them from **2.0 MB to
-163 KB**.
+instrument lists ship **gzipped and stripped of defaulted fields** (provider `yahoo`,
+currency `USD`, `providerSymbol` == symbol), taking them from **2.0 MB to 163 KB**.
 
-Getting dramatically below ~30 MB would mean not shipping the Flutter engine —
-i.e. a different stack (Tauri/webview is ~5–10 MB) — which is a rewrite.
+Getting dramatically below ~30 MB would mean not shipping the Flutter engine — i.e. a
+different stack (Tauri/webview is ~5–10 MB) — which is a rewrite.
 
 </details>
 
 <details>
-<summary><b>🧮 The maths</b></summary>
+<summary><b>🧮 &nbsp;The maths</b></summary>
+<br>
 
 ### Position accounting — Weighted Average Cost
 
@@ -379,8 +414,8 @@ S_p = (mean(periodic_return) - risk_free_periodic) / stdev(returns) * sqrt(K)
 ```
 
 `K` is 252 for equity trading days, 365 for 24/7 crypto. The app uses daily
-observations, a short-dated sovereign yield as the risk-free rate when one is
-cached, and reports `—` until there are at least three days of history.
+observations, a short-dated sovereign yield as the risk-free rate when one is cached,
+and reports `—` until there are at least three days of history.
 
 ### Maximum drawdown
 
@@ -388,8 +423,8 @@ cached, and reports `—` until there are at least three days of history.
 MDD = min over t of ( E_t - max_{τ<=t} E_τ ) / max_{τ<=t} E_τ
 ```
 
-The worst peak-to-trough decline of portfolio equity, shown both as a percentage
-and an amount.
+The worst peak-to-trough decline of portfolio equity, shown both as a percentage and
+an amount.
 
 ### Fixed income — clean vs dirty price
 
@@ -401,8 +436,8 @@ dirty = clean + accrued_interest
 accrued_interest = (C/m) * (days_elapsed / days_in_period)
 ```
 
-- `C` annual coupon (`c * par`), `m` payments per year, `y` yield to maturity,
-  `M` remaining periods, `v` fraction of the current period elapsed.
+- `C` annual coupon (`c * par`), `m` payments per year, `y` yield to maturity, `M`
+  remaining periods, `v` fraction of the current period elapsed.
 
 Yield to maturity is solved by bisection on the price function, and **modified
 duration** estimates rate sensitivity:
@@ -412,32 +447,32 @@ modified_duration = macaulay_duration / (1 + y/m)
 ΔP/P ≈ -modified_duration * Δy
 ```
 
-`BondMath.modifiedDuration` is validated against numeric differentiation of the
-price function in the test suite.
+`BondMath.modifiedDuration` is validated against numeric differentiation of the price
+function in the test suite.
 
 > The original design document carried a Python reference implementation of the
 > engine. It has been superseded: `lib/trading/portfolio_engine.dart` and
-> `lib/trading/trading_engine.dart` are the authoritative implementation, and the
-> tests assert the same formulas.
+> `lib/trading/trading_engine.dart` are authoritative, and the tests assert the same
+> formulas.
 
 </details>
 
 <details>
-<summary><b>🎨 Design system</b></summary>
+<summary><b>🎨 &nbsp;Design system</b></summary>
+<br>
 
 Institutional trading-terminal ergonomics, deliberately anti-"AI template": no
 gradients, no glassmorphism, no glowing blobs, no oversized rounded cards, no
 unlabelled sparklines.
 
-- **Typography** — `Inter` for UI and labels, `JetBrains Mono` for prices, tickers
-  and quantities with `font-variant-numeric: tabular-nums` so digits align and
-  never jitter on live ticks. Both bundled offline.
-- **Surfaces** — matte carbon `#0D0E11` / panel `#13151A` / raised `#181B21`;
-  light theme paper `#F7F7F5`. **1px hairline** borders (`#22252A`) instead of
-  drop shadows.
+- **Typography** — `Inter` for UI and labels, `JetBrains Mono` for prices, tickers and
+  quantities with `font-variant-numeric: tabular-nums` so digits align and never jitter
+  on live ticks. Both bundled offline.
+- **Surfaces** — matte carbon `#0D0E11` / panel `#13151A` / raised `#181B21`; light
+  theme paper `#F7F7F5`. **1px hairline** borders (`#22252A`) instead of drop shadows.
 - **Semantic colour only** — muted emerald `#10B981` strictly for positive P&L and
-  bids, muted crimson `#EF4444` strictly for negative P&L and asks, amber
-  `#D97706` only for offline/queued. Structural chrome is neutral slate.
+  bids, muted crimson `#EF4444` strictly for negative P&L and asks, amber `#D97706`
+  only for offline/queued. Structural chrome is neutral slate.
 - **Geometry** — 4px spacing scale, 2/4/6px radii, no elevation.
 - **Theming** — surface/text tokens are palette-driven (`AppPalette`), so switching
   appearance never changes geometry or meaning.
@@ -445,11 +480,11 @@ unlabelled sparklines.
 </details>
 
 <details>
-<summary><b>🗺️ Roadmap & status</b></summary>
+<summary><b>🗺️ &nbsp;Roadmap &amp; status</b></summary>
+<br>
 
-All seven planned phases are implemented. The build started from the plan below
-and deviated where the plan met reality — recorded here rather than quietly
-dropped.
+All seven planned phases are implemented. The build started from the plan below and
+deviated where the plan met reality — recorded here rather than quietly dropped.
 
 | Phase | Planned | As built |
 | :--- | :--- | :--- |
@@ -464,19 +499,20 @@ dropped.
 ### Deliberately not done
 
 - **Resting-order sync across devices** — pending orders stay on the device that
-  placed them. Making them travel means recording `ORDER_PLACED` /
-  `ORDER_CANCELLED` / `ORDER_FILLED` as ledger events and deciding cross-device
-  cancel/partial-fill semantics first. The `ledger_events.meta` column is the hook.
+  placed them. Making them travel means recording `ORDER_PLACED` / `ORDER_CANCELLED` /
+  `ORDER_FILLED` as ledger events and deciding cross-device cancel/partial-fill
+  semantics first. The `ledger_events.meta` column is the hook.
 - **Keyed data providers** — no API keys were available; the interface is ready.
-- **A licensed 50k+ dataset** — the bundled ~12,100 cover the listed universe; a
-  full global dataset needs a licensed source.
-- **MSIX** — requires a signing certificate; the portable folder/zip remains an
-  option for people who cannot install.
+- **A licensed 50k+ dataset** — the bundled ~12,100 cover the listed universe; a full
+  global dataset needs a licensed source.
+- **MSIX** — requires a signing certificate; the portable folder remains an option for
+  people who cannot install.
 
 </details>
 
 <details>
-<summary><b>🧪 Development</b></summary>
+<summary><b>🧪 &nbsp;Development</b></summary>
+<br>
 
 ### Requirements
 
@@ -484,8 +520,8 @@ dropped.
 - **Windows:** Visual Studio 2022 with *Desktop development with C++*
 - **Android:** Android SDK (platform 35+), build-tools, JDK 17
 
-The app uses **zero Flutter plugins**, so it builds without enabling Windows
-Developer Mode. Adding a plugin will require it.
+The app uses **zero Flutter plugins**, so it builds without enabling Windows Developer
+Mode. Adding a plugin will require it.
 
 ### Run
 
@@ -504,9 +540,9 @@ flutter test
 Covers the accounting and matching engine (WAC, fees, slippage, lot precision,
 resting/stop orders, fund NAV settlement, bond accrual and coupon idempotency),
 portfolio isolation and cash withdrawals, portfolio analytics, sync (two-device
-convergence against a fake gist, ETag/304, rate-limit translation, token
-diagnostics), streaming (coalescing with `fake_async`, Binance parsing) and the
-providers (mocked HTTP).
+convergence against a fake gist, ETag/304, rate-limit translation, token diagnostics),
+streaming (coalescing with `fake_async`, Binance parsing) and the providers (mocked
+HTTP).
 
 Optional live checks, excluded from normal runs:
 
@@ -531,32 +567,41 @@ flutter build appbundle --release --obfuscate --split-debug-info=build/app/outpu
 
 ### Tooling
 
-- `tool/build_catalog.js` — regenerates the instrument catalogs. Downloads the
-  official NASDAQ Trader symbol directory, strips defaulted fields and writes
-  gzipped assets. Curated international listings live in `tool/markets.js`.
+- `tool/build_catalog.js` — regenerates the instrument catalogs. Downloads the official
+  NASDAQ Trader symbol directory, strips defaulted fields and writes gzipped assets.
+  Curated international listings live in `tool/markets.js`.
 - `tool/installer.nsi` — the NSIS installer.
 
 </details>
 
 <details>
-<summary><b>⚠️ Data, caveats & limitations</b></summary>
+<summary><b>⚠️ &nbsp;Data, caveats &amp; limitations</b></summary>
+<br>
 
-- Listings derive from the public **NASDAQ Trader symbol directory** plus a
-  curated international set; Yahoo symbols encode the venue suffix (`.DE`, `.L`,
-  `.T`, `.HK`, `.NS`, …).
+- Listings derive from the public **NASDAQ Trader symbol directory** plus a curated
+  international set; Yahoo symbols encode the venue suffix (`.DE`, `.L`, `.T`, `.HK`,
+  `.NS`, …).
 - Market data comes from each provider's public endpoints and is subject to their
   terms. This is a **simulation** — no orders ever reach a real market.
 - **London (`.L`) prices arrive in pence, not pounds.**
 - Indices are tradable as synthetic instruments with no contract specification.
-- Release Android builds are **debug-key signed**; add a keystore before
-  distributing.
+- Release Android builds are **debug-key signed**; add a keystore before distributing.
 - The Windows uninstaller keeps your data (`%APPDATA%\PaperTradingApp`) on purpose.
-- Removing a portfolio is local: if it has already synced, another device will
-  upload it again.
+- Removing a portfolio is local: if it has already synced, another device will upload
+  it again.
 
 </details>
 
-## Licence
+---
 
-Personal project, provided as-is for experimentation. Market data belongs to the
-respective providers. Not affiliated with BestBrokers.
+<p align="center">
+  <sub>
+    Built with Flutter · Not affiliated with BestBrokers ·
+    <a href="https://github.com/tureisD/paper-trading-app/releases">Releases</a> ·
+    <a href="https://github.com/tureisD/paper-trading-app/issues">Issues</a>
+  </sub>
+</p>
+
+<p align="center">
+  <sub>Personal project, provided as-is for experimentation. Market data belongs to the respective providers.</sub>
+</p>
