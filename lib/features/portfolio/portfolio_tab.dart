@@ -78,13 +78,15 @@ class PortfolioTab extends StatefulWidget {
   final ValueChanged<String> onAccountChanged;
 
   @override
-  State<PortfolioTab> createState() => _PortfolioTabState();
+  State<PortfolioTab> createState() => PortfolioTabState();
 }
 
-class _PortfolioTabState extends State<PortfolioTab> {
+class PortfolioTabState extends State<PortfolioTab> {
   CurveRange _range = CurveRange.all;
   bool _marking = false;
   String? _markError;
+  DateTime? _lastReload;
+  int _reloadedQuotes = 0;
 
   @override
   void initState() {
@@ -92,7 +94,7 @@ class _PortfolioTabState extends State<PortfolioTab> {
     // Rebuild at most once per coalesced batch, never per tick.
     widget.liveQuotes.addListener(_onLiveQuotes);
     // Price the book on first display, when there is something to price.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _markToMarket());
+    WidgetsBinding.instance.addPostFrameCallback((_) => reloadPrices());
   }
 
   @override
@@ -105,32 +107,50 @@ class _PortfolioTabState extends State<PortfolioTab> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _markToMarket() async {
-    final state = PortfolioEngine.replay(widget.ledger.all(accountId: widget.accountId));
+  /// Fetches fresh prices for everything held, records today's valuation and
+  /// rebuilds the derived numbers. Bound to the RELOAD button and `F5`.
+  Future<void> reloadPrices() async {
+    if (_marking) return;
+
+    final state =
+        PortfolioEngine.replay(widget.ledger.all(accountId: widget.accountId));
     final instruments = <Instrument>[];
     for (final position in state.openPositions) {
       final instrument = widget.instruments.get(position.symbol);
       if (instrument != null) instruments.add(instrument);
-    }
-    if (instruments.isEmpty) {
-      _recordSnapshot();
-      return;
     }
 
     setState(() {
       _marking = true;
       _markError = null;
     });
+
+    var fetched = 0;
     try {
-      await widget.marketData.refreshQuotes(instruments);
+      if (instruments.isNotEmpty) {
+        final quotes = await widget.marketData.refreshQuotes(instruments);
+        fetched = quotes.length;
+        if (fetched == 0) {
+          throw MarketDataException(
+            'No quotes came back for ${instruments.length} '
+            '${instruments.length == 1 ? 'holding' : 'holdings'}',
+            source: 'reload',
+          );
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _lastReload = DateTime.now();
+        _reloadedQuotes = fetched;
+      });
+      _recordSnapshot();
     } on MarketDataException catch (e) {
-      _markError = e.toString();
+      if (mounted) setState(() => _markError = e.toString());
     } catch (e) {
-      _markError = 'Mark-to-market failed: $e';
+      if (mounted) setState(() => _markError = 'Price refresh failed: $e');
     } finally {
       if (mounted) setState(() => _marking = false);
     }
-    _recordSnapshot();
   }
 
   PortfolioAnalytics _buildAnalytics(
@@ -331,11 +351,12 @@ class _PortfolioTabState extends State<PortfolioTab> {
       ];
 
   List<Widget> _actions() => <Widget>[
-        GhostButton(label: 'DEPOSIT', onPressed: widget.onDeposit),
         GhostButton(
-          label: _marking ? 'MARKING…' : 'MARK',
-          onPressed: _marking ? () {} : _markToMarket,
+          label: _marking ? 'RELOADING…' : 'RELOAD',
+          accent: AppColors.focus,
+          onPressed: _marking ? () {} : reloadPrices,
         ),
+        GhostButton(label: 'DEPOSIT', onPressed: widget.onDeposit),
         GhostButton(label: 'SETTINGS', onPressed: _openSettings),
       ];
 
@@ -382,6 +403,20 @@ class _PortfolioTabState extends State<PortfolioTab> {
                 for (final stat in stats.skip(1)) Expanded(child: stat),
               ],
             ),
+          if (_marking || _lastReload != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              _marking
+                  ? 'FETCHING PRICES…'
+                  : 'PRICES UPDATED ${_formatClock(_lastReload)}'
+                      '${_reloadedQuotes > 0 ? '  •  $_reloadedQuotes QUOTES' : ''}',
+              style: AppTypography.mono(
+                size: 10,
+                color: _marking ? AppColors.textMutedDark : AppColors.positive,
+                letterSpacing: 0.4,
+              ),
+            ),
+          ],
           if (_markError != null) ...[
             const SizedBox(height: AppSpacing.sm),
             Text(

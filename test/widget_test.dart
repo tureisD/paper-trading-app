@@ -42,6 +42,25 @@ void main() {
     expect(find.textContaining('Search ticker'), findsOneWidget);
   });
 
+  testWidgets('reloads portfolio prices on command', (tester) async {
+    final db = AppDatabase.inMemory();
+    addTearDown(db.close);
+
+    await tester.pumpWidget(
+      PaperTradingApp(database: db, databasePath: ':memory:'),
+    );
+    await tester.pumpAndSettle();
+
+    // The first paint already prices the book.
+    expect(find.textContaining('PRICES UPDATED'), findsOneWidget);
+
+    await tester.tap(find.text('RELOAD'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('PRICES UPDATED'), findsOneWidget);
+    expect(find.text('RELOAD'), findsOneWidget);
+  });
+
   testWidgets('settings dialog exposes portfolios, funding and withdrawals',
       (tester) async {
     final db = AppDatabase.inMemory();

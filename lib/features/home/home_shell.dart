@@ -73,6 +73,8 @@ class _HomeShellState extends State<HomeShell> {
 
   final GlobalKey<DiscoveryTabState> _discoveryKey =
       GlobalKey<DiscoveryTabState>();
+  final GlobalKey<PortfolioTabState> _portfolioKey =
+      GlobalKey<PortfolioTabState>();
 
   SyncOutcome? _syncOutcome;
   late final LiveQuoteService _liveQuotes;
@@ -164,6 +166,11 @@ class _HomeShellState extends State<HomeShell> {
       FocusManager.instance.primaryFocus?.unfocus();
       return KeyEventResult.handled;
     }
+    // F5 reloads portfolio prices from anywhere.
+    if (key == LogicalKeyboardKey.f5) {
+      _portfolioKey.currentState?.reloadPrices();
+      return KeyEventResult.handled;
+    }
     return KeyEventResult.ignored;
   }
 
@@ -192,6 +199,7 @@ class _HomeShellState extends State<HomeShell> {
                   index: _tab,
                   children: [
                     PortfolioTab(
+                      key: _portfolioKey,
                       databasePath: widget.databasePath,
                       ledger: widget.ledger,
                       instruments: widget.instruments,
@@ -355,7 +363,7 @@ class _TopBar extends StatelessWidget {
           if (wide) ...[
             const SizedBox(width: AppSpacing.lg),
             Text(
-              'Ctrl+1/2  •  /  •  Ctrl+R',
+              'Ctrl+1/2  •  /  •  F5  •  Ctrl+R',
               style: AppTypography.mono(
                 size: 10,
                 color: AppColors.textMutedDark,
