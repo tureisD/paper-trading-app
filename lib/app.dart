@@ -13,6 +13,7 @@ import 'market/instrument_repository.dart';
 import 'market/market_data_service.dart';
 import 'market/quote_repository.dart';
 import 'sync/sync_config_store.dart';
+import 'sync/sync_coordinator.dart';
 import 'sync/sync_engine.dart';
 import 'trading/account_repository.dart';
 import 'trading/pending_order_repository.dart';
@@ -44,7 +45,7 @@ class _PaperTradingAppState extends State<PaperTradingApp> {
   late final PositionRepository _positions;
   late final AccountRepository _accounts;
   late final EquitySnapshotRepository _snapshots;
-  late final SyncEngine _sync;
+  late final SyncCoordinator _sync;
 
   String _activeAccountId = AccountRepository.defaultAccountId;
 
@@ -61,14 +62,19 @@ class _PaperTradingAppState extends State<PaperTradingApp> {
     _accounts = AccountRepository(database);
     _snapshots = EquitySnapshotRepository(database);
     _accounts.ensureDefault();
-    _sync = SyncEngine(
-      database: database,
-      ledger: _ledger,
-      config: SyncConfigStore(database),
-      deviceId: _ledger.deviceId,
-      schemaVersion: Schema.version,
-      onMerged: () => _engine(_activeAccountId).rebuildCache(),
+    _sync = SyncCoordinator(
+      engine: SyncEngine(
+        database: database,
+        ledger: _ledger,
+        config: SyncConfigStore(database),
+        deviceId: _ledger.deviceId,
+        schemaVersion: Schema.version,
+        onMerged: () => _engine(_activeAccountId).rebuildCache(),
+      ),
     );
+    // Every local write schedules a debounced push.
+    _ledger.onAppended = _sync.notifyLocalChange;
+    _sync.start();
   }
 
   TradingEngine _engine(String accountId) => TradingEngine(
@@ -82,6 +88,7 @@ class _PaperTradingAppState extends State<PaperTradingApp> {
 
   @override
   void dispose() {
+    _sync.dispose();
     _theme.dispose();
     super.dispose();
   }
@@ -115,7 +122,7 @@ class _PaperTradingAppState extends State<PaperTradingApp> {
             quotes: _quotes,
           ),
           engine: _engine(accountId),
-          syncEngine: _sync,
+          sync: _sync,
           snapshots: _snapshots,
           settings: _settings,
           theme: _theme,

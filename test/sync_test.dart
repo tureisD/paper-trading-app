@@ -14,6 +14,7 @@ import 'package:paper_trading_app/sync/hlc.dart';
 import 'package:paper_trading_app/sync/secret_codec.dart';
 import 'package:paper_trading_app/sync/shard_codec.dart';
 import 'package:paper_trading_app/sync/sync_config_store.dart';
+import 'package:paper_trading_app/sync/sync_coordinator.dart';
 import 'package:paper_trading_app/sync/sync_engine.dart';
 import 'package:paper_trading_app/trading/order.dart';
 import 'package:paper_trading_app/trading/pending_order_repository.dart';
@@ -492,6 +493,122 @@ void main() {
       expect(outcome.state, SyncState.error);
       expect(outcome.message, contains('gist'));
       expect(a.config.gistId, isNull);
+    });
+  });
+
+  group('SyncCoordinator', () {
+    late FakeGist gist;
+    late _Device a;
+    late _Device b;
+    final coordinators = <SyncCoordinator>[];
+
+    setUp(() {
+      gist = FakeGist();
+      a = _Device('device_a');
+      b = _Device('device_b');
+    });
+    tearDown(() {
+      for (final coordinator in coordinators) {
+        coordinator.dispose();
+      }
+      coordinators.clear();
+      a.dispose();
+      b.dispose();
+    });
+
+    SyncCoordinator coordinatorFor(_Device device, {int intervalMs = 40}) {
+      final coordinator = SyncCoordinator(
+        engine: device.syncEngine(gist),
+        pullInterval: Duration(milliseconds: intervalMs),
+        pushDebounce: const Duration(milliseconds: 10),
+      );
+      device.ledger.onAppended = coordinator.notifyLocalChange;
+      coordinators.add(coordinator);
+      return coordinator;
+    }
+
+    test('pushes on its own shortly after a local write', () async {
+      final coordinator = coordinatorFor(a);
+      await coordinator.engine.connect(token: gist.token);
+
+      a.ledger.append(a.ledger.deposit(amount: 250, at: DateTime.utc(2026, 1, 2)));
+      expect(a.ledger.pendingCount(), 1, reason: 'queued immediately');
+
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+
+      expect(
+        a.ledger.pendingCount(),
+        0,
+        reason: 'the debounced push should have run without any button',
+      );
+      expect(coordinator.outcome?.ok, isTrue);
+    });
+
+    test('two devices converge with no manual sync at all', () async {
+      final coordinatorA = coordinatorFor(a);
+      await coordinatorA.engine.connect(token: gist.token);
+
+      final coordinatorB = coordinatorFor(b);
+      await coordinatorB.engine.connect(
+        token: gist.token,
+        gistId: gist.id,
+      );
+
+      // Background polling on both sides from here on.
+      coordinatorA.start();
+      coordinatorB.start();
+
+      a.ledger.append(
+        a.ledger.deposit(amount: 5000, at: DateTime.utc(2026, 1, 3)),
+      );
+
+      // Give the push debounce and a few pull intervals to run.
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+
+      expect(b.engine.snapshot().cash, closeTo(5000, 1e-6));
+      expect(a.ledger.pendingCount(), 0);
+
+      // And the reverse direction: trade on B, A should see it.
+      const apple = Instrument(
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: AssetClass.stock,
+      );
+      a.instruments.upsert(apple);
+      b.instruments.upsert(apple);
+      b.engine.submit(
+        instrument: apple,
+        side: OrderSide.buy,
+        type: OrderType.market,
+        quantity: 2,
+        quote: Quote.derive(
+          symbol: 'AAPL',
+          price: 100,
+          asOf: DateTime.utc(2026, 1, 3),
+          source: 'test',
+        ),
+        now: DateTime.utc(2026, 1, 4),
+      );
+
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+
+      expect(
+        a.engine.snapshot().positions['AAPL']?.quantity,
+        closeTo(2, 1e-9),
+        reason: 'the trade travelled back without pressing SYNC',
+      );
+      expect(a.ledger.all().length, b.ledger.all().length);
+    });
+
+    test('does not sync when no vault is configured', () async {
+      final coordinator = coordinatorFor(a);
+      a.ledger.append(a.ledger.deposit(amount: 10, at: DateTime.utc(2026, 1, 1)));
+
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+
+      expect(coordinator.isConfigured, isFalse);
+      expect(gist.requestCount, 0);
+      expect(a.ledger.pendingCount(), 1, reason: 'stays queued, never lost');
     });
   });
 }

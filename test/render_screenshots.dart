@@ -22,6 +22,7 @@ import 'package:paper_trading_app/market/models/quote.dart';
 import 'package:paper_trading_app/market/providers/market_data_provider.dart';
 import 'package:paper_trading_app/market/quote_repository.dart';
 import 'package:paper_trading_app/sync/sync_config_store.dart';
+import 'package:paper_trading_app/sync/sync_coordinator.dart';
 import 'package:paper_trading_app/sync/sync_engine.dart';
 import 'package:paper_trading_app/trading/account_repository.dart';
 import 'package:paper_trading_app/trading/order.dart';
@@ -182,11 +183,13 @@ void main() {
                 providers: [_FakeProvider()],
               ),
               engine: engine,
-              syncEngine: SyncEngine(
-                database: db,
-                ledger: ledger,
-                config: syncConfig,
-                deviceId: 'windows_desktop',
+              sync: SyncCoordinator(
+                engine: SyncEngine(
+                  database: db,
+                  ledger: ledger,
+                  config: syncConfig,
+                  deviceId: 'windows_desktop',
+                ),
               ),
               snapshots: EquitySnapshotRepository(db),
               settings: settings,

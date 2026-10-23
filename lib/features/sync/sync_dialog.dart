@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../design/layout.dart';
 import '../../design/tokens.dart';
+import '../../sync/sync_coordinator.dart';
 import '../../sync/sync_engine.dart';
 
 /// Vault setup / manual sync dialog.
@@ -9,22 +11,24 @@ import '../../sync/sync_engine.dart';
 /// derived views (remote events may have been merged).
 Future<bool> showSyncDialog(
   BuildContext context, {
-  required SyncEngine engine,
+  required SyncCoordinator sync,
   required VoidCallback onChanged,
 }) async {
   final result = await showDialog<bool>(
     context: context,
     barrierColor: const Color(0xCC000000),
-    builder: (_) => _SyncDialog(engine: engine, onChanged: onChanged),
+    builder: (_) => _SyncDialog(sync: sync, onChanged: onChanged),
   );
   return result ?? false;
 }
 
 class _SyncDialog extends StatefulWidget {
-  const _SyncDialog({required this.engine, required this.onChanged});
+  const _SyncDialog({required this.sync, required this.onChanged});
 
-  final SyncEngine engine;
+  final SyncCoordinator sync;
   final VoidCallback onChanged;
+
+  SyncEngine get engine => sync.engine;
 
   @override
   State<_SyncDialog> createState() => _SyncDialogState();
@@ -35,6 +39,7 @@ class _SyncDialogState extends State<_SyncDialog> {
   final TextEditingController _gistId = TextEditingController();
 
   bool _busy = false;
+  bool _dirty = false;
   String? _message;
   bool _messageIsError = false;
 
@@ -45,16 +50,24 @@ class _SyncDialogState extends State<_SyncDialog> {
     if (widget.engine.config.token != null) {
       _token.text = widget.engine.config.token!;
     }
+    _token.addListener(_markDirty);
+    _gistId.addListener(_markDirty);
+  }
+
+  void _markDirty() {
+    if (!_dirty && mounted) setState(() => _dirty = true);
   }
 
   @override
   void dispose() {
+    _token.removeListener(_markDirty);
+    _gistId.removeListener(_markDirty);
     _token.dispose();
     _gistId.dispose();
     super.dispose();
   }
 
-  Future<void> _run(Future<SyncOutcome> Function() action) async {
+  Future<void> _run(Future<SyncOutcome?> Function() action) async {
     setState(() {
       _busy = true;
       _message = null;
@@ -62,6 +75,13 @@ class _SyncDialogState extends State<_SyncDialog> {
     try {
       final outcome = await action();
       if (!mounted) return;
+      if (outcome == null) {
+        setState(() {
+          _messageIsError = true;
+          _message = 'Connect a vault first.';
+        });
+        return;
+      }
       setState(() {
         _messageIsError = !outcome.ok;
         _message = outcome.ok
@@ -85,13 +105,14 @@ class _SyncDialogState extends State<_SyncDialog> {
     );
   }
 
-  Future<void> _syncNow() => _run(() => widget.engine.syncNow());
+  Future<void> _syncNow() => _run(() => widget.sync.syncNow());
 
   void _disconnect() {
     widget.engine.disconnect();
     _token.clear();
     _gistId.clear();
     setState(() {
+      _dirty = false;
       _message = 'Vault disconnected on this device.';
       _messageIsError = false;
     });
@@ -102,13 +123,11 @@ class _SyncDialogState extends State<_SyncDialog> {
   Widget build(BuildContext context) {
     final config = widget.engine.config;
     final outcome = widget.engine.lastOutcome;
-    final configured = widget.engine.isConfigured;
+    final configured = widget.sync.isConfigured;
 
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      elevation: 0,
+    return AppDialog(
+      maxWidth: 520,
       child: Container(
-        width: 520,
         decoration: BoxDecoration(
           color: AppColors.panelDark,
           border: Border.all(
@@ -128,6 +147,13 @@ class _SyncDialogState extends State<_SyncDialog> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   _infoRow('STATUS', outcome?.label ?? 'LOCAL ONLY'),
+                  _infoRow(
+                    'AUTO-SYNC',
+                    configured
+                        ? 'every ${widget.sync.pullInterval.inSeconds}s, plus '
+                            'after each trade'
+                        : 'not connected',
+                  ),
                   _infoRow(
                     'DEVICE',
                     widget.engine.deviceId,
@@ -328,24 +354,15 @@ class _SyncDialogState extends State<_SyncDialog> {
               ),
               const SizedBox(width: AppSpacing.sm),
               Expanded(
+                flex: 2,
                 child: TextButton(
-                  onPressed: _busy
-                      ? null
-                      : (_token.text.trim().isEmpty
-                          ? (configured ? _syncNow : null)
-                          : _connect),
+                  onPressed: _busy ? null : _primaryAction(configured),
                   style: _buttonStyle(
-                    _token.text.trim().isEmpty && !configured
+                    _primaryAction(configured) == null
                         ? AppColors.textMutedDark
                         : AppColors.focus,
                   ),
-                  child: Text(
-                    _busy
-                        ? 'WORKING…'
-                        : (_token.text.trim().isEmpty
-                            ? (configured ? 'SYNC NOW' : 'PASTE A TOKEN')
-                            : 'CONNECT & SYNC'),
-                  ),
+                  child: Text(_primaryLabel(configured)),
                 ),
               ),
             ],
@@ -353,6 +370,21 @@ class _SyncDialogState extends State<_SyncDialog> {
         ],
       ),
     );
+  }
+
+  /// Once a vault is configured and the fields are untouched, the primary
+  /// action is a plain sync; otherwise it sets the vault up.
+  VoidCallback? _primaryAction(bool configured) {
+    if (configured && !_dirty) return _syncNow;
+    if (_token.text.trim().isEmpty) return null;
+    return _connect;
+  }
+
+  String _primaryLabel(bool configured) {
+    if (_busy) return 'WORKING…';
+    if (configured && !_dirty) return 'SYNC NOW';
+    if (_token.text.trim().isEmpty) return 'PASTE A TOKEN';
+    return 'CONNECT & SYNC';
   }
 
   ButtonStyle _buttonStyle(Color accent) => TextButton.styleFrom(

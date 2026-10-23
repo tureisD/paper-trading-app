@@ -16,6 +16,7 @@ import '../../market/models/instrument.dart';
 import '../../market/models/quote.dart';
 import '../../market/providers/market_data_provider.dart';
 import '../../market/quote_repository.dart';
+import '../../sync/sync_coordinator.dart';
 import '../../sync/sync_engine.dart';
 import '../../trading/order.dart';
 import '../../trading/fee_model.dart';
@@ -42,11 +43,9 @@ class PortfolioTab extends StatefulWidget {
     required this.engine,
     required this.snapshots,
     required this.liveQuotes,
-    required this.syncEngine,
-    required this.syncOutcome,
+    required this.sync,
     required this.pendingSync,
     required this.onOpenSync,
-    required this.onSyncNow,
     required this.onDeposit,
     required this.settings,
     required this.theme,
@@ -64,11 +63,9 @@ class PortfolioTab extends StatefulWidget {
   final TradingEngine engine;
   final EquitySnapshotRepository snapshots;
   final LiveQuoteService liveQuotes;
-  final SyncEngine syncEngine;
-  final SyncOutcome? syncOutcome;
+  final SyncCoordinator sync;
   final int pendingSync;
   final VoidCallback onOpenSync;
-  final VoidCallback onSyncNow;
   final VoidCallback onDeposit;
   final SettingsStore settings;
   final ThemeController theme;
@@ -612,12 +609,25 @@ class PortfolioTabState extends State<PortfolioTab> {
   // -------------------------------------------------------------------------
 
   Widget _syncPanel() {
-    final outcome = widget.syncOutcome;
+    final outcome = widget.sync.outcome;
+    final configured = widget.sync.isConfigured;
+    final busy = widget.sync.isBusy;
+
     return Panel(
       title: 'SYNC (GIST VAULT)',
-      trailing: GhostButton(
-        label: 'SETUP / SYNC',
-        onPressed: widget.onOpenSync,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          GhostButton(
+            label: busy ? 'SYNCING…' : 'SYNC NOW',
+            accent: configured ? AppColors.focus : AppColors.textMutedDark,
+            onPressed: busy || !configured
+                ? () {}
+                : () => widget.sync.syncNow(),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          GhostButton(label: 'SETUP', onPressed: widget.onOpenSync),
+        ],
       ),
       child: Column(
         children: [
@@ -628,8 +638,13 @@ class PortfolioTabState extends State<PortfolioTab> {
             valueColor: _syncColour(outcome?.state),
           ),
           KeyValueRow(
+            label: 'ACCOUNT',
+            value: widget.sync.config.accountLogin ?? 'not connected',
+            mono: true,
+          ),
+          KeyValueRow(
             label: 'VAULT',
-            value: widget.syncEngine.config.gistId ?? 'not connected',
+            value: widget.sync.config.gistId ?? 'not connected',
             mono: true,
           ),
           KeyValueRow(
@@ -639,7 +654,15 @@ class PortfolioTabState extends State<PortfolioTab> {
           ),
           KeyValueRow(
             label: 'LAST SYNC',
-            value: _formatClock(widget.syncEngine.config.lastSyncAt),
+            value: _formatClock(widget.sync.config.lastSyncAt),
+            mono: true,
+          ),
+          KeyValueRow(
+            label: 'AUTO-SYNC',
+            value: configured
+                ? 'every ${widget.sync.pullInterval.inSeconds}s '
+                    '+ after each trade'
+                : 'connect a vault to enable',
             mono: true,
           ),
           if (outcome?.message != null)

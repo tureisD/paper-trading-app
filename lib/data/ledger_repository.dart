@@ -73,9 +73,13 @@ class LedgerRepository {
     );
   }
 
+  /// Invoked after a local append so sync can push shortly afterwards.
+  void Function()? onAppended;
+
   /// Appends an event to the local ledger, queued for sync (`synced = 0`).
   void append(LedgerEvent event) {
     _db.raw.execute(_insertSql, event.toSqlParams());
+    onAppended?.call();
   }
 
   /// Inserts a remote event if we have not already seen its id.

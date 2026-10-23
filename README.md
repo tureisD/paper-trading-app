@@ -137,6 +137,9 @@ portfolio with **$100,000** of simulated cash.
 ### Sync
 
 - **Free forever** through one secret GitHub Gist you own.
+- **Automatic** — a debounced push runs a couple of seconds after every trade,
+  deposit or withdrawal, and both devices poll every 45 s while the app is open.
+  A **SYNC** button is always in the header for an immediate pull + push.
 - Hybrid logical clocks, append-only per-device monthly shards, conflict-free by
   construction.
 - Token encrypted at rest with Windows DPAPI; conditional `GET`s cost zero
@@ -225,6 +228,9 @@ Portfolio history syncs through **one secret GitHub Gist that you own**.
 
 ### How it works
 
+- **Automatic cadence** — a debounced push ~2 s after the last local write, a full
+  pull + push every 45 s while the app is open, and one on launch. The **SYNC**
+  button (header) or **SYNC NOW** (vault panel) forces it immediately.
 - Only **events** travel. Balances, cost basis and P&L are recomputed locally, so two
   devices can never disagree about state.
 - Every event carries a **UUIDv7** id and a **Hybrid Logical Clock** stamp, which

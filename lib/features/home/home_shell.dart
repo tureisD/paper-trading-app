@@ -12,9 +12,11 @@ import '../../market/instrument_repository.dart';
 import '../../market/live_quotes.dart';
 import '../../market/market_data_service.dart';
 import '../../market/quote_repository.dart';
+import '../../sync/sync_coordinator.dart';
 import '../../sync/sync_engine.dart';
 import '../../trading/trading_engine.dart';
 import '../../trading/account_repository.dart';
+import '../common/primitives.dart';
 import '../discovery/discovery_tab.dart';
 import '../portfolio/portfolio_tab.dart';
 import '../sync/sync_dialog.dart';
@@ -38,7 +40,7 @@ class HomeShell extends StatefulWidget {
     required this.quotes,
     required this.marketData,
     required this.engine,
-    required this.syncEngine,
+    required this.sync,
     required this.snapshots,
     required this.settings,
     required this.theme,
@@ -55,7 +57,7 @@ class HomeShell extends StatefulWidget {
   final QuoteRepository quotes;
   final MarketDataService marketData;
   final TradingEngine engine;
-  final SyncEngine syncEngine;
+  final SyncCoordinator sync;
   final EquitySnapshotRepository snapshots;
   final SettingsStore settings;
   final ThemeController theme;
@@ -76,7 +78,7 @@ class _HomeShellState extends State<HomeShell> {
   final GlobalKey<PortfolioTabState> _portfolioKey =
       GlobalKey<PortfolioTabState>();
 
-  SyncOutcome? _syncOutcome;
+  SyncOutcome? get _syncOutcome => widget.sync.outcome;
   late final LiveQuoteService _liveQuotes;
 
   @override
@@ -86,17 +88,18 @@ class _HomeShellState extends State<HomeShell> {
       quotes: widget.quotes,
       engine: widget.engine,
     );
-    _syncOutcome = widget.syncEngine.lastOutcome;
-    // Silent background pull/push when a vault is already configured.
-    if (widget.syncEngine.isConfigured) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _syncNow());
-    }
+    // The coordinator already polls in the background; just mirror its state.
+    widget.sync.addListener(_onSyncChanged);
+  }
+
+  void _onSyncChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    widget.sync.removeListener(_onSyncChanged);
     _liveQuotes.dispose();
-    widget.syncEngine.dispose();
     super.dispose();
   }
 
@@ -116,24 +119,18 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   Future<void> _syncNow() async {
-    final outcome = await widget.syncEngine.syncNow();
-    if (!mounted) return;
-    setState(() => _syncOutcome = outcome);
+    await widget.sync.syncNow();
   }
 
   Future<void> _openSyncDialog() async {
     await showSyncDialog(
       context,
-      engine: widget.syncEngine,
+      sync: widget.sync,
       onChanged: () {
-        if (mounted) {
-          setState(() => _syncOutcome = widget.syncEngine.lastOutcome);
-        }
+        if (mounted) setState(() {});
       },
     );
-    if (mounted) {
-      setState(() => _syncOutcome = widget.syncEngine.lastOutcome);
-    }
+    if (mounted) setState(() {});
   }
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
@@ -191,6 +188,8 @@ class _HomeShellState extends State<HomeShell> {
                 accountName: widget.accountName,
                 pendingSync: widget.ledger.pendingCount(),
                 syncOutcome: _syncOutcome,
+                syncing: widget.sync.isBusy,
+                onSync: _syncNow,
                 onSyncTap: _openSyncDialog,
                 compact: compact,
               ),
@@ -207,12 +206,10 @@ class _HomeShellState extends State<HomeShell> {
                       marketData: widget.marketData,
                       engine: widget.engine,
                       snapshots: widget.snapshots,
-                      syncEngine: widget.syncEngine,
                       liveQuotes: _liveQuotes,
-                      syncOutcome: _syncOutcome,
+                      sync: widget.sync,
                       pendingSync: widget.ledger.pendingCount(),
                       onOpenSync: _openSyncDialog,
-                      onSyncNow: _syncNow,
                       onDeposit: _deposit,
                       settings: widget.settings,
                       theme: widget.theme,
@@ -253,6 +250,8 @@ class _TopBar extends StatelessWidget {
     required this.accountName,
     required this.pendingSync,
     required this.syncOutcome,
+    required this.syncing,
+    required this.onSync,
     required this.onSyncTap,
     required this.compact,
   });
@@ -262,6 +261,8 @@ class _TopBar extends StatelessWidget {
   final String accountName;
   final int pendingSync;
   final SyncOutcome? syncOutcome;
+  final bool syncing;
+  final VoidCallback onSync;
   final VoidCallback onSyncTap;
   final bool compact;
 
@@ -371,6 +372,12 @@ class _TopBar extends StatelessWidget {
             ),
           ],
           const Spacer(),
+          GhostButton(
+            label: syncing ? (compact ? '…' : 'SYNCING…') : 'SYNC',
+            accent: AppColors.focus,
+            onPressed: syncing ? () {} : onSync,
+          ),
+          const SizedBox(width: AppSpacing.sm),
           _StatusPill(
             pending: pendingSync,
             outcome: syncOutcome,
