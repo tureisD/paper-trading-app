@@ -214,6 +214,10 @@ void main() {
         await tester.tap(find.text('MSFT'));
         await _settle(tester);
       }
+      if (view == 'sync') {
+        await tester.tap(find.textContaining('QUEUED ('));
+        await _settle(tester);
+      }
 
       final out = Platform.environment['RENDER_OUT'] ??
           r'C:\Users\Dmitry Koryakin\AppData\Local\Temp\opencode\screens.png';

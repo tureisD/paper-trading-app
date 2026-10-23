@@ -61,6 +61,35 @@ void main() {
     expect(find.text('RELOAD'), findsOneWidget);
   });
 
+  testWidgets('saves a token from the sync dialog without connecting',
+      (tester) async {
+    final db = AppDatabase.inMemory();
+    addTearDown(db.close);
+
+    await tester.pumpWidget(
+      PaperTradingApp(database: db, databasePath: ':memory:'),
+    );
+    await tester.pumpAndSettle();
+
+    // The status pill opens the vault dialog.
+    await tester.tap(find.text('LOCAL • QUEUED (0)'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('GITHUB TOKEN'), findsOneWidget);
+
+    await tester.enterText(
+      find.byType(TextField).first,
+      'ghp_abcdefghijklmnopqrstuvwxyz0123456789',
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('SAVE'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Token saved'), findsOneWidget);
+    expect(find.text('SYNC'), findsOneWidget);
+  });
+
   testWidgets('settings dialog exposes portfolios, funding and withdrawals',
       (tester) async {
     final db = AppDatabase.inMemory();

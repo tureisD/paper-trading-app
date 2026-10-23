@@ -107,6 +107,32 @@ class _SyncDialogState extends State<_SyncDialog> {
 
   Future<void> _syncNow() => _run(() => widget.sync.syncNow());
 
+  /// Stores the token (and gist id) without connecting, so it survives a restart
+  /// and can be used later. The token is sanitised and DPAPI-encrypted on write.
+  void _saveToken() {
+    final token = _token.text.trim();
+    if (token.isEmpty) {
+      setState(() {
+        _message = 'Paste a GitHub token first.';
+        _messageIsError = true;
+      });
+      return;
+    }
+    final gistId = _gistId.text.trim();
+
+    widget.engine.config.token = token;
+    widget.engine.config.gistId = gistId.isEmpty ? null : gistId;
+
+    setState(() {
+      _dirty = false;
+      _messageIsError = false;
+      _message = gistId.isEmpty
+          ? 'Token saved (encrypted). Press CONNECT & SYNC to create the vault.'
+          : 'Token and vault saved. Press SYNC NOW when you are ready.';
+    });
+    widget.onChanged();
+  }
+
   void _disconnect() {
     widget.engine.disconnect();
     _token.clear();
@@ -141,12 +167,13 @@ class _SyncDialogState extends State<_SyncDialog> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _header(),
-            Padding(
-              padding: const EdgeInsets.all(AppSpacing.lg),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _infoRow('STATUS', outcome?.label ?? 'LOCAL ONLY'),
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(AppSpacing.lg),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _infoRow('STATUS', outcome?.label ?? 'LOCAL ONLY'),
                   _infoRow(
                     'AUTO-SYNC',
                     configured
@@ -180,16 +207,28 @@ class _SyncDialogState extends State<_SyncDialog> {
                   ),
                   const SizedBox(height: AppSpacing.md),
                   _fieldLabel('GITHUB TOKEN'),
-                  _input(_token, obscure: true, hint: 'github_pat_… or ghp_…'),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _input(
+                          _token,
+                          obscure: true,
+                          hint: 'github_pat_… or ghp_…',
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      _action('SAVE', AppColors.focus, _saveToken),
+                    ],
+                  ),
                   const SizedBox(height: AppSpacing.md),
                   _fieldLabel('GIST ID (LEAVE BLANK TO CREATE A NEW VAULT)'),
                   _input(_gistId, hint: 'e.g. 4ac33b9c00751fddc7f8'),
                   const SizedBox(height: AppSpacing.sm),
                   Text(
                     'The token needs the "gists" scope (classic) or the Gists '
-                    'user permission (fine-grained). It is encrypted with '
-                    'Windows DPAPI before being written to the local database, '
-                    'and any pasted spaces or line breaks are stripped.',
+                    'user permission (fine-grained). SAVE stores it (encrypted '
+                    'with Windows DPAPI) without connecting; any pasted spaces '
+                    'or line breaks are stripped.',
                     style: AppTypography.ui(
                       size: 11,
                       color: AppColors.textMutedDark,
@@ -199,6 +238,7 @@ class _SyncDialogState extends State<_SyncDialog> {
                 ],
               ),
             ),
+          ),
             _footer(configured),
           ],
         ),
@@ -386,6 +426,12 @@ class _SyncDialogState extends State<_SyncDialog> {
     if (_token.text.trim().isEmpty) return 'PASTE A TOKEN';
     return 'CONNECT & SYNC';
   }
+
+  Widget _action(String label, Color accent, VoidCallback onTap) => TextButton(
+        onPressed: _busy ? null : onTap,
+        style: _buttonStyle(accent),
+        child: Text(label),
+      );
 
   ButtonStyle _buttonStyle(Color accent) => TextButton.styleFrom(
         minimumSize: const Size(0, 34),
