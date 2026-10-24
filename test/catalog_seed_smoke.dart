@@ -36,6 +36,9 @@ void main() {
       final byName = repository.search('siemens', limit: 3).map((i) => i.symbol);
       final byIndexWord =
           repository.search('500', limit: 3).map((i) => i.symbol);
+      final secunet = repository.search('secunet', limit: 3);
+      final bechtle = repository.search('bechtle', limit: 3);
+      final wallix = repository.search('wallix', limit: 3);
       final crypto = repository
           .search('', assetClass: AssetClass.crypto, limit: 3)
           .map((i) => i.symbol);
@@ -44,12 +47,20 @@ void main() {
       print(
         'seeded=$seeded rows=${repository.count()} '
         'in ${watch.elapsedMilliseconds}ms | '
-        'AAPL=$bySymbol siemens=$byName 500=$byIndexWord crypto=$crypto',
+        'AAPL=$bySymbol siemens=$byName 500=$byIndexWord crypto=$crypto '
+        'secunet=${secunet.map((i) => '${i.symbol}/${i.exchange}')} '
+        'bechtle=${bechtle.map((i) => '${i.symbol}/${i.exchange}')} '
+        'wallix=${wallix.map((i) => '${i.symbol}/${i.exchange}')}',
       );
 
       expect(seeded, greaterThan(5000));
       expect(repository.count(), greaterThan(5000));
       expect(bySymbol, contains('AAPL'));
+
+      // European small and mid caps the curated list used to miss.
+      expect(secunet.map((i) => i.symbol), contains('YSN.DE'));
+      expect(bechtle.map((i) => i.symbol), contains('BC8.DE'));
+      expect(wallix.map((i) => i.symbol), contains('ALLIX.PA'));
     },
     timeout: const Timeout(Duration(minutes: 5)),
   );

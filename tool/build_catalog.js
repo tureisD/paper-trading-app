@@ -1,21 +1,24 @@
 // Generates the bulk instrument catalogs shipped as assets:
 //   assets/data/instruments_us.json.gz    (official NASDAQ Trader symbol directory)
-//   assets/data/instruments_intl.json.gz  (curated EU / Asia / Americas + indices)
+//   assets/data/instruments_intl.json.gz  (curated EU / Asia / Americas, every
+//                                          European cash equity Yahoo lists, indices)
 //
 // Downloads the symbol directory itself, so the catalog is reproducible:
 //
+//   node tool/fetch_eu_listings.js     # refresh the European listing cache
 //   node tool/build_catalog.js
 //
 // Entries omit anything that can be defaulted at parse time (provider `yahoo`,
 // currency `USD`, providerSymbol == symbol) and are gzip-compressed, which takes
-// the payload from ~2 MB to ~250 KB.
+// the payload from ~3 MB to ~350 KB.
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 
 const ROOT = path.resolve(__dirname, '..');
 const CACHE = path.join(__dirname, '.cache');
-const CATALOG_VERSION = 6;
+const EU_LISTINGS = path.join(CACHE, 'eu_listings.json');
+const CATALOG_VERSION = 7;
 
 const NASDAQ_LISTED =
   'https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt';
@@ -131,9 +134,17 @@ const INDICES = [
   ['^STI', 'Straits Times Index', 'Singapore'],
 ];
 
+/// Curated venue labels that differ from the generated ones.
+const VENUE_ALIASES = {
+  SIX: 'SIX Swiss Exchange',
+  XETRA: 'XETRA',
+  'Warsaw Stock Exchange': 'GPW Warsaw',
+};
+
 function buildInternational() {
   const out = [];
   for (const [suffix, venue, currency, list] of MARKETS) {
+    const venueName = VENUE_ALIASES[venue] || venue;
     for (const pair of list.split(',')) {
       const [ticker, name] = pair.split('=');
       if (!ticker || !name || name === 'x' || ticker.includes('?')) continue;
@@ -142,7 +153,7 @@ function buildInternational() {
         symbol,
         name: name.replace(/\?/g, '').trim(),
         assetClass: 'STOCK',
-        exchange: venue,
+        exchange: venueName,
         currency,
         providerSymbol: symbol,
       });
@@ -157,7 +168,33 @@ function buildInternational() {
       providerSymbol: symbol,
     });
   }
+
+  // Bulk European coverage, generated from Yahoo's screener by
+  // tool/fetch_eu_listings.js. Curated names win, so a company already listed
+  // above keeps its own symbol and venue.
+  if (fs.existsSync(EU_LISTINGS)) {
+    const seen = new Set(out.map((item) => nameKey(item.name)));
+    const generated = JSON.parse(fs.readFileSync(EU_LISTINGS, 'utf8'));
+    for (const entry of generated) {
+      const key = nameKey(entry.name);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(entry);
+    }
+    console.log(
+      `  European listings: ${generated.length} generated, ${out.length} after merging curated names`,
+    );
+  } else {
+    console.warn(
+      '  ! tool/.cache/eu_listings.json missing — run node tool/fetch_eu_listings.js',
+    );
+  }
   return out;
+}
+
+/// Cross-venue duplicate key: ignores case, punctuation and share-class noise.
+function nameKey(name) {
+  return name.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
 function dedupe(list) {
@@ -213,7 +250,7 @@ async function main() {
   );
   write(
     'instruments_intl.json.gz',
-    'Curated EU / Asia / Americas listings and global indices, mapped to Yahoo Finance symbols.',
+    'Curated EU / Asia / Americas listings, every European cash equity Yahoo lists, and global indices, mapped to Yahoo Finance symbols. Regenerate with tool/fetch_eu_listings.js + tool/build_catalog.js.',
     dedupe(buildInternational()),
   );
 }

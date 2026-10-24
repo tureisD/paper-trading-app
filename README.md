@@ -14,7 +14,7 @@
 <h3 align="center">A local-first paper trading terminal for Windows&nbsp;and&nbsp;Android</h3>
 
 <p align="center">
-  <em>Twelve thousand instruments, real market data, your own append-only ledger —
+  <em>Nearly twenty thousand instruments, real market data, your own append-only ledger —
   synced between your devices for free through a GitHub Gist you own.</em>
 </p>
 
@@ -26,7 +26,7 @@
 
 |  |  |
 | :--- | :--- |
-| **Instruments** | ~12,100 — US, Europe, Asia and the Americas, plus 26 global indices |
+| **Instruments** | ~19,400 — US, Europe (every Yahoo-listed cash equity), Asia and the Americas, plus 26 global indices |
 | **Asset classes** | Stocks · ETFs · Mutual funds · Crypto · Bonds · Indices |
 | **Platforms** | Windows 10/11 (x64) · Android |
 | **Market data** | Yahoo · Binance · FRED · ECB — **no API keys** |
@@ -76,7 +76,7 @@ Grab the latest build from [**Releases**](https://github.com/tureisD/paper-tradi
 | `TureisBanking-*-android-universal.apk` | Any Android device | ~55 MB, all ABIs. |
 | `TureisBanking-*-android.aab` | Play Store upload | |
 
-First launch seeds the instrument catalogue (about 12,000 rows, ~0.2 s) and opens a
+First launch seeds the instrument catalogue (about 19,000 rows, ~0.35 s) and opens a
 portfolio with **$100,000** of simulated cash.
 
 > [!NOTE]
@@ -89,7 +89,7 @@ portfolio with **$100,000** of simulated cash.
 1. **Portfolio** — net liquidation value, day and total P&L, holdings, equity curve
    and risk metrics. Hit **RELOAD** (or `F5`) to pull fresh prices for everything
    you hold.
-2. **Discovery** — search 12,000 instruments offline, inspect the chart and metrics,
+2. **Discovery** — search 19,000 instruments offline, inspect the chart and metrics,
    and trade from the split pane.
 3. **Settings** — themes, multiple named portfolios, add or remove cash.
 
@@ -101,9 +101,11 @@ portfolio with **$100,000** of simulated cash.
 
 ### Trading
 
-- **~12,100 instruments** — the complete US symbol directory (NASDAQ, NYSE, NYSE
-  American, NYSE Arca, Cboe, IEX), curated EU/Asia/Americas listings and 26 global
-  indices. Instant offline search over symbol, name and ISIN.
+- **~19,400 instruments** — the complete US symbol directory (NASDAQ, NYSE, NYSE
+  American, NYSE Arca, Cboe, IEX), every European cash equity Yahoo lists (Xetra,
+  Euronext, LSE, SIX, Nasdaq Nordic, Borsa Italiana, BME, GPW, Athens, Budapest,
+  Dublin, Istanbul, Vienna), curated Asia/Americas listings and 26 global indices.
+  Instant offline search over symbol, name and ISIN.
 - **Multiple named portfolios**, each with its own ledger, cash, holdings and
   history — all synced together.
 - **Cash in and out** — deposit, withdraw a specific amount, or clear all cash.
@@ -354,7 +356,7 @@ merge, only events to insert once.
   day; every schedule goes through `parseDateUtc`.
 - **Coalesced ticks** — one UI update, one cache write and one order-evaluation pass
   per frame (60/120 Hz).
-- **Bulk seeding** — prepared statements in a single transaction: 12k instruments in
+- **Bulk seeding** — prepared statements in a single transaction: 19k instruments in
   ~0.2 s instead of ~15 s.
 
 ### Footprint
@@ -495,7 +497,7 @@ deviated where the plan met reality — recorded here rather than quietly droppe
 | Phase | Planned | As built |
 | :--- | :--- | :--- |
 | **1** | Flutter/Tauri, SQLite + WAL, design tokens | ✅ Flutter 3.47, `package:sqlite3` 3.x via build hooks, Inter + JetBrains Mono, **zero plugins** |
-| **2** | Finnhub/Alpaca/Polygon, Binance, Yahoo, FRED, ECB, 50k FTS5 index | ✅ **Keyless-first**: Yahoo, Binance REST **and WebSocket**, FRED, ECB. **~12,100 instruments** seeded in ~0.2 s |
+| **2** | Finnhub/Alpaca/Polygon, Binance, Yahoo, FRED, ECB, 50k FTS5 index | ✅ **Keyless-first**: Yahoo, Binance REST **and WebSocket**, FRED, ECB. **~19,400 instruments** seeded in ~0.35 s |
 | **3** | Accounts, ledger, position cache, pending orders, asset-specific rules | ✅ Schema v3 tables, WAC replay, market/limit/stop, fractional equity lots, crypto 1e-8 + 0.10% fee, fund `QUEUED_NAV`, bond clean→dirty + idempotent coupons |
 | **4** | HLC stamping, Turso/Cloudflare/Gist, status pill | ✅ **Gist-only by design.** HLC + UUIDv7, per-device monthly NDJSON shards, ETag conditional GET, shard-hash checkpoints, rate-limit auto-retry, DPAPI token |
 | **5** | Summary header, holdings table, analytics drawer | ✅ Plus **sell-all / partial-sell / buy-more**, **multiple named portfolios**, **cash withdrawals**, daily `equity_snapshots`, risk-free rate, **dark/light themes**, custom funding |
@@ -509,7 +511,7 @@ deviated where the plan met reality — recorded here rather than quietly droppe
   `ORDER_FILLED` as ledger events and deciding cross-device cancel/partial-fill
   semantics first. The `ledger_events.meta` column is the hook.
 - **Keyed data providers** — no API keys were available; the interface is ready.
-- **A licensed 50k+ dataset** — the bundled ~12,100 cover the listed universe; a full
+- **A licensed 50k+ dataset** — the bundled ~19,400 cover the listed universe; a full
   global dataset needs a licensed source.
 - **MSIX** — requires a signing certificate; the portable folder remains an option for
   people who cannot install.
@@ -576,6 +578,11 @@ flutter build appbundle --release --obfuscate --split-debug-info=build/app/outpu
 - `tool/build_catalog.js` — regenerates the instrument catalogs. Downloads the official
   NASDAQ Trader symbol directory, strips defaulted fields and writes gzipped assets.
   Curated international listings live in `tool/markets.js`.
+- `tool/fetch_eu_listings.js` — enumerates every European cash equity Yahoo lists
+  (Xetra, Euronext, LSE, SIX, Nasdaq Nordic, Borsa Italiana, BME, GPW, Athens,
+  Budapest, Dublin, Istanbul, Vienna), caches the result in `tool/.cache/` and drops
+  bonds, certificates and cross-venue duplicates. Run it before the catalog build to
+  refresh European coverage.
 - `tool/installer.nsi` — the NSIS installer.
 
 </details>
@@ -585,8 +592,8 @@ flutter build appbundle --release --obfuscate --split-debug-info=build/app/outpu
 <br>
 
 - Listings derive from the public **NASDAQ Trader symbol directory** plus a curated
-  international set; Yahoo symbols encode the venue suffix (`.DE`, `.L`, `.T`, `.HK`,
-  `.NS`, …).
+  international set and a generated sweep of European venues; Yahoo symbols encode
+  the venue suffix (`.DE`, `.PA`, `.L`, `.T`, `.HK`, `.NS`, …).
 - Market data comes from each provider's public endpoints and is subject to their
   terms. This is a **simulation** — no orders ever reach a real market.
 - **London (`.L`) prices arrive in pence, not pounds.**
