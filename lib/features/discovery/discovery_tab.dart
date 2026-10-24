@@ -261,7 +261,7 @@ class DiscoveryTabState extends State<DiscoveryTab> {
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Text(
-                '${_results.length} RESULTS',
+                _results.length == 1 ? '1 RESULT' : '${_results.length} RESULTS',
                 style: AppTypography.label(AppColors.textMutedDark),
               ),
               if (_refreshing)

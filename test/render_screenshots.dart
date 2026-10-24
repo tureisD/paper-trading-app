@@ -14,6 +14,7 @@ import 'package:paper_trading_app/data/ledger_repository.dart';
 import 'package:paper_trading_app/design/app_theme.dart';
 import 'package:paper_trading_app/features/home/home_shell.dart';
 import 'package:paper_trading_app/market/asset_class.dart';
+import 'package:paper_trading_app/market/catalog_importer.dart';
 import 'package:paper_trading_app/market/instrument_repository.dart';
 import 'package:paper_trading_app/market/market_data_service.dart';
 import 'package:paper_trading_app/market/models/candle.dart';
@@ -61,6 +62,9 @@ void main() {
 
       final ledger = LedgerRepository(db);
       final instruments = InstrumentRepository(db);
+      if (Platform.environment['RENDER_SEED'] == '1') {
+        await CatalogImporter.seedIfNeeded(instruments);
+      }
       final quotes = QuoteRepository(db);
       final positions = PositionRepository(db);
       final engine = TradingEngine(
@@ -209,10 +213,13 @@ void main() {
         // Bounded pumps: the tree keeps async work alive, so settle can hang.
         await tester.tap(find.text('DISCOVERY'));
         await _settle(tester);
-        await tester.enterText(find.byType(TextField).first, 'msft');
+        final query = Platform.environment['RENDER_QUERY'] ?? 'msft';
+        await tester.enterText(find.byType(TextField).first, query);
         await _settle(tester);
-        await tester.tap(find.text('MSFT'));
-        await _settle(tester);
+        if (Platform.environment['RENDER_SELECT'] != '0') {
+          await tester.tap(find.text(query.toUpperCase()));
+          await _settle(tester);
+        }
       }
       if (view == 'sync') {
         await tester.tap(find.textContaining('QUEUED ('));
